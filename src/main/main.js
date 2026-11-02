@@ -106,6 +106,10 @@ async function startSession(id, { cols, rows, prompt } = {}) {
     mcpConfigPath: writeMcpConfig(id),
     extraArgs: extra || [],
   });
+  // Demo mode (for screenshots): no profile, neutral prompt, so no personal info shows.
+  if (process.env.BURROW_DEMO && agent.id === 'shell') {
+    launch.args = ['-NoLogo', '-NoProfile', '-NoExit', '-Command', 'function prompt { "PS ~\\burrow> " }'];
+  }
   const env = { PATH: await freshPath() };
   if (bridge) Object.assign(env, { BURROW_SESSION_ID: id, BURROW_PORT: String(bridge.port), BURROW_TOKEN: bridge.token });
   ptys.spawn(id, { ...launch, cwd: project?.path, cols, rows, env });
@@ -244,6 +248,24 @@ async function refreshAgents() {
   return agents;
 }
 
+// ---------- demo (README screenshots) ----------
+// Types into Burrow's own terminals from inside the app; never touches the real keyboard.
+function runDemo() {
+  if (!process.env.BURROW_DEMO) return;
+  win.setAlwaysOnTop(true, 'screen-saver');
+  if (process.env.BURROW_DEMO_VIEW === 'usage') {
+    setTimeout(() => send('demo', 'usage'), 1500);
+    return;
+  }
+  setTimeout(() => {
+    for (const s of state.sessions) {
+      if (!ptys.has(s.id)) continue;
+      if (s.agent === 'shell') ptys.write(s.id, 'npm test\r');
+      if (s.agent === 'claude') ptys.write(s.id, 'add a dark-mode toggle to the settings page and update the tokens');
+    }
+  }, 9000);
+}
+
 // ---------- window ----------
 
 function applyMaterial() {
@@ -275,7 +297,10 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    runDemo();
+  });
   win.on('focus', () => {
     win.flashFrame(false);
     if (Date.now() - lastAgentCheck > 5000) refreshAgents();

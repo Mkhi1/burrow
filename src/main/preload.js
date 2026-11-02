@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('burrow', {
   openExternal: (url) => ipcRenderer.send('shell:external', url),
   onState: on('state'),
   onAgents: on('agents'),
+  onDemo: on('demo'),
   onData: on('pty:data'),
   onStatus: on('status'),
   onUnread: on('unread'),

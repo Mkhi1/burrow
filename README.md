@@ -1,6 +1,16 @@
-# Burrow
+<p align="center">
+  <img src="build/icon.png" width="96" alt="Burrow icon" />
+</p>
 
-A calm, minimal terminal home for your coding agents on Windows.
+<h1 align="center">Burrow</h1>
+
+<p align="center">A calm, minimal terminal home for your coding agents on Windows.</p>
+
+<p align="center">
+  <a href="../../releases/latest"><b>Download for Windows</b></a>
+</p>
+
+![Burrow running Claude Code next to a terminal](docs/screenshot-main.png)
 
 Run Claude Code, Codex, OpenCode, Gemini CLI, Kimi, Cursor Agent or a plain shell side by side, organised by project, on a blurred black glass window.
 
@@ -21,6 +31,12 @@ Windows may show a SmartScreen warning because the installer isn't code-signed. 
 - **Auto-detect agents:** newly installed CLIs are picked up when you return to the window, or via **Check agents**.
 - **Real terminals:** ConPTY + xterm.js with WebGL rendering, links, copy/paste and resume (`--continue`) after restart.
 - **Look:** Windows 11 Acrylic/Mica blur, black and white theme, smooth motion (respects *reduce motion*).
+
+## Token usage
+
+A terminal-style page (`Ctrl+Shift+U`) that shows how many tokens your agents used, in plain words.
+
+![Token usage page](docs/screenshot-usage.png)
 
 ## Shortcuts
 

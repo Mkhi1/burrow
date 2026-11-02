@@ -178,6 +178,7 @@
 
   // ---------- live updates ----------
 
+  burrow.onDemo((view) => view === 'usage' && B.usage.open());
   burrow.onAgents((list) => {
     B.agents = list;
   });
