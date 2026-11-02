@@ -1,0 +1,135 @@
+'use strict';
+
+const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const pty = require('node-pty');
+const { stripAnsi, extractTitle, computeStatus } = require('./status');
+
+const SCROLLBACK_BYTES = 1_000_000;
+const TAIL_CHARS = 6000;
+const TICK_MS = 400;
+
+/**
+ * Owns all live terminals. Emits:
+ *  data(id, chunk) · status(id, status, prev) · title(id, title) · exit(id, code)
+ */
+class PtyManager extends EventEmitter {
+  constructor() {
+    super();
+    this.terms = new Map();
+    this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  has(id) {
+    return this.terms.has(id);
+  }
+
+  spawn(id, { file, args, cwd, env, cols = 100, rows = 30 }) {
+    if (this.terms.has(id)) return;
+    const safeCwd = cwd && fs.existsSync(cwd) ? cwd : process.env.USERPROFILE;
+    const proc = pty.spawn(file, args, {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd: safeCwd,
+      env: { ...process.env, ...env, TERM_PROGRAM: 'Burrow', COLORTERM: 'truecolor' },
+      useConpty: true,
+    });
+    const term = { proc, buffer: '', tail: '', lastOutput: 0, lastInput: 0, status: 'idle', exited: false };
+    this.terms.set(id, term);
+
+    const live = () => this.terms.get(id) === term;
+    proc.onData((chunk) => {
+      if (!live()) return;
+      term.buffer = (term.buffer + chunk).slice(-SCROLLBACK_BYTES);
+      term.tail = (term.tail + stripAnsi(chunk)).slice(-TAIL_CHARS);
+      term.lastOutput = Date.now();
+      const title = extractTitle(chunk);
+      if (title) this.emit('title', id, title);
+      if (chunk.includes('\x07') && !/\x1b\][^\x07]*\x07/.test(chunk)) this.setStatus(id, term, 'attention');
+      this.emit('data', id, chunk);
+    });
+    proc.onExit(({ exitCode }) => {
+      term.exited = true;
+      if (!live()) return;
+      this.setStatus(id, term, 'exited');
+      this.emit('exit', id, exitCode);
+    });
+  }
+
+  write(id, data) {
+    const term = this.terms.get(id);
+    if (!term || term.exited) return false;
+    term.lastInput = Date.now();
+    term.proc.write(data);
+    return true;
+  }
+
+  /** Type text into a TUI and press enter after it has absorbed the paste. */
+  sendText(id, text, submit = true) {
+    if (!this.write(id, text)) return false;
+    if (submit) setTimeout(() => this.write(id, '\r'), 180);
+    return true;
+  }
+
+  resize(id, cols, rows) {
+    const term = this.terms.get(id);
+    if (!term || term.exited || cols < 2 || rows < 2) return;
+    try {
+      term.proc.resize(cols, rows);
+    } catch {
+      /* resizing a dying pty can throw; harmless */
+    }
+  }
+
+  buffer(id) {
+    return this.terms.get(id)?.buffer || '';
+  }
+
+  readText(id, maxLines = 80) {
+    const tail = this.terms.get(id)?.tail || '';
+    return tail.split(/\r?\n/).filter((l) => l.trim()).slice(-maxLines).join('\n');
+  }
+
+  statusOf(id) {
+    return this.terms.get(id)?.status || 'dormant';
+  }
+
+  kill(id) {
+    const term = this.terms.get(id);
+    if (!term) return;
+    this.terms.delete(id);
+    try {
+      term.proc.kill();
+    } catch {
+      /* already gone */
+    }
+  }
+
+  killAll() {
+    clearInterval(this.timer);
+    for (const id of [...this.terms.keys()]) this.kill(id);
+  }
+
+  setStatus(id, term, status) {
+    if (term.status === status) return;
+    const prev = term.status;
+    term.status = status;
+    this.emit('status', id, status, prev);
+  }
+
+  tick() {
+    const now = Date.now();
+    for (const [id, term] of this.terms) {
+      if (term.exited) continue;
+      // A bell-triggered attention state sticks until new output or input arrives.
+      if (term.status === 'attention' && now - Math.max(term.lastOutput, term.lastInput) > 700) {
+        const next = computeStatus({ now, lastOutput: term.lastOutput, lastInput: term.lastInput, tail: term.tail, exited: false });
+        if (next === 'idle') continue;
+      }
+      this.setStatus(id, term, computeStatus({ now, ...term }));
+    }
+  }
+}
+
+module.exports = { PtyManager };
