@@ -4,7 +4,7 @@
 
 <h1 align="center">Burrow</h1>
 
-<p align="center">A calm, minimal terminal home for your coding agents on Windows.</p>
+<p align="center">A calm, minimal terminal home for your coding agents on Windows.<br/><sub>Developed by MK</sub></p>
 
 <p align="center">
   <a href="../../releases/latest"><b>Download for Windows</b></a>
@@ -14,6 +14,13 @@
 
 Run Claude Code, Codex, OpenCode, Gemini CLI, Kimi, Cursor Agent or a plain shell side by side, organised by project, on a blurred black glass window.
 
+## What's new in 0.3.3
+
+- **Drag to split:** drag a session from the sidebar onto the screen. A preview shows where it lands: left or right half, top or bottom, or in place of a pane. The session also stays on its own page, so closing the split pane leaves that page as it was.
+- **Accurate working status:** Burrow now reads what is on each terminal's screen right now. Claude Code, Codex, Gemini and OpenCode count as working only while their "esc to interrupt" line is visible, so you see the moment they finish. Plain terminals count as working from Enter until the prompt comes back, so a quiet download still shows as running.
+- **New working mark:** a 3×3 square of dots lit in a loop around its edge. It is orange for Claude Code and white for other agents, in the sidebar and in the pane title.
+- **Fixes:** a stray "nullnull" in Settings is gone, and "Developed by MK" now shows in Settings and on the welcome screen.
+
 ## Download
 
 Grab **Burrow Setup.exe** from the [latest release](../../releases/latest) and run it.
@@ -22,9 +29,9 @@ Windows may show a SmartScreen warning because the installer isn't code-signed. 
 ## Features
 
 - **Projects & sessions:** add folders, start any agent inside them, pin, rename (double-click or F2) and reorder.
-- **Live status:** an animated dot while an agent works, a pulsing dot when it needs your approval, and a dot when it finishes. Native notifications are throttled so they never spam.
+- **Live status:** read from the live screen. A looping dot square while an agent works (orange for Claude Code), a pulsing dot when it needs your approval, and a check when it finishes. Native notifications are throttled so they never spam.
 - **Working timer:** shows `Working… 1m 12s` in the title bar while an agent runs.
-- **Splits:** up to 4 panes per page, side by side or stacked. Drag the divider to resize, double-click to reset. Drag a session onto a pane to split.
+- **Splits:** up to 4 panes per page, side by side or stacked. Drag the divider to resize, double-click to reset. Drag a session from the sidebar onto the screen to split it, with a live preview of where it lands.
 - **Pages:** multiple layouts, switched with the dots or `Ctrl+Alt+← / →`.
 - **Token usage:** a terminal-style page that reads your Claude Code and Codex logs. It shows totals, cache hit rate, per-day bars, projects, models and top sessions.
 - **Agent-to-agent messaging (MCP):** every Claude Code session gets tools to list, read, message and start other sessions.
@@ -33,7 +40,7 @@ Windows may show a SmartScreen warning because the installer isn't code-signed. 
 - **Simple editor:** `Ctrl+Shift+F` opens any file as a card next to your agent. Markdown gets a live preview with clickable checkboxes; the file reloads when the agent edits it.
 - **Open in Burrow:** right-click a folder or file in Explorer.
 - **Auto-update:** new versions download in the background; restart when you are ready.
-- **Animated themes:** Galaxy (black hole + sparkles), Shark (a glowing character-mosaic shark swimming a loop), Bloom (dot-matrix flowers), Prism (pastel ASCII sphere), Poster (blue ASCII on cream). Drawn in code, light on CPU (about 1–3 ms a frame, slower in the background, paused when minimized).
+- **Animated themes:** Galaxy (black hole + sparkles), Shark (a glowing character-mosaic shark swimming a loop), Bloom (dot-matrix flowers), Prism (pastel ASCII sphere), Poster (blue ASCII on cream), Sky (halftone dot clouds drifting across a blue sky). Drawn in code, light on CPU (about 1–3 ms a frame, slower in the background, paused when minimized).
 - **Look:** Windows 11 Acrylic/Mica blur, black and white theme, smooth motion (respects *reduce motion*).
 
 ## Token usage
@@ -81,4 +88,4 @@ npm run dist       # build the installer into dist/
 
 ## License
 
-MIT
+MIT. Developed by MK.

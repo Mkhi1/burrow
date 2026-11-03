@@ -29,24 +29,47 @@ const ATTENTION_PATTERNS = [
   /waiting for (your )?(approval|confirmation)/i,
 ];
 
-const BUSY_PATTERNS = [/esc to interrupt/i, /ctrl\+c to (cancel|interrupt)/i];
+// Agents print one of these on screen only while they are working (Claude Code, Codex, Gemini, OpenCode).
+const BUSY_PATTERNS = [/esc to (interrupt|cancel)/i, /esc interrupt/i, /ctrl\+c to (cancel|interrupt)/i];
 
-const needsAttention = (tail) => ATTENTION_PATTERNS.some((re) => re.test(tail));
-const looksBusy = (tail) => BUSY_PATTERNS.some((re) => re.test(tail));
+// A shell prompt waiting at the cursor: PowerShell, cmd, bash/zsh, fish/starship.
+const PROMPT_RE = /^(PS [^>]*>|[A-Za-z]:\\[^>]*>)|[$#❯›»]\s*$|^>{1,3}\s*$/;
+
+const needsAttention = (text) => ATTENTION_PATTERNS.some((re) => re.test(text));
+const looksBusy = (text) => BUSY_PATTERNS.some((re) => re.test(text));
+const atPrompt = (line) => PROMPT_RE.test(line.trimEnd());
+
+const BUSY_HOLD_MS = 1200; // agents redraw; keep "working" briefly after the marker blinks off
 
 /**
- * Decide status from timing + the visible tail of output.
- * now/lastOutput/lastInput are ms timestamps.
+ * Decide status from what is on screen right now, plus output timing.
+ *  screen: visible text of the terminal · cursorLine: the line the cursor is on
+ *  agent: 'shell' or an agent id · marks: per-terminal memory (mutated: busySeen, sawMarker)
  */
-function computeStatus({ now, lastOutput, lastInput, tail, exited }) {
+function computeStatus({ now, lastOutput, lastInput, lastEnter = 0, screen = '', cursorLine = '', fullscreen = false, agent = 'shell', exited, marks = {} }) {
   if (exited) return 'exited';
   const sinceOut = now - lastOutput;
+  if (sinceOut > 700 && needsAttention(screen)) return 'attention';
+
+  if (looksBusy(screen)) {
+    marks.busySeen = now;
+    marks.sawMarker = true;
+  }
+  if (agent !== 'shell' && marks.sawMarker) {
+    // The agent shows a working line while busy; when it disappears, it's done.
+    return now - (marks.busySeen || 0) < BUSY_HOLD_MS ? 'busy' : 'idle';
+  }
+
+  // Plain shell: a command runs until a fresh prompt comes back (promptSeen is set by the
+  // caller only for a prompt on a new line, so the line the command was typed on doesn't count).
+  if (agent === 'shell' && !fullscreen) {
+    if (lastEnter > (marks.promptSeen || 0)) return 'busy';
+    if (atPrompt(cursorLine)) return 'idle';
+  }
+  // Full-screen apps, or an agent we can't read yet: go by output timing.
   const echoOnly = lastOutput - lastInput < 250 && lastOutput >= lastInput;
-  const recent = tail.slice(-1500);
-  if (sinceOut > 700 && needsAttention(recent)) return 'attention';
   if (sinceOut < 1500 && !echoOnly) return 'busy';
-  if (sinceOut < 4000 && looksBusy(recent)) return 'busy';
   return 'idle';
 }
 
-module.exports = { stripAnsi, extractTitle, computeStatus, needsAttention };
+module.exports = { stripAnsi, extractTitle, computeStatus, needsAttention, atPrompt, looksBusy };

@@ -8,7 +8,7 @@
 
   // ---------- working timer ----------
   // Agents pause briefly between bursts of output, so a run only ends after a quiet grace period.
-  const GRACE_MS = 5000;
+  const GRACE_MS = 600; // main already smooths status; just bridge a redraw
   const runs = new Map(); // id -> { since, quietSince }
 
   function trackStatus(id, status) {
@@ -55,7 +55,10 @@
       // Card-level signal: spinner in the title and a light running along the top edge.
       if (pane.el.classList.contains('working') !== Boolean(run)) {
         pane.el.classList.toggle('working', Boolean(run));
-        pane.brand.innerHTML = run ? '<span class="spinner"></span>' : icons.brand;
+        const session = B.sessionById(id);
+        const agentId = session ? B.agentOf(session) : 'shell';
+        pane.brand.innerHTML = run ? B.workingMark(agentId) : icons.brand;
+        pane.el.style.setProperty('--c', B.agentColor(agentId));
       }
       if (run) pane.timerText.textContent = `Working… ${formatElapsed((run.quietSince || now) - run.since)}`;
     }
@@ -88,16 +91,6 @@
     const el = h('section.pane', {
       'data-id': id,
       onMousedown: () => focusPane(id),
-      onDragover: (e) => {
-        if (e.dataTransfer.types.includes('text/burrow-session')) e.preventDefault();
-      },
-      onDrop: (e) => {
-        const dropped = e.dataTransfer.getData('text/burrow-session');
-        if (!dropped || dropped === id) return;
-        const r = el.getBoundingClientRect();
-        const dir = (e.clientY - r.top) / r.height > 0.66 ? 'col' : 'row';
-        burrow.dispatch({ type: 'pane/focus', sessionId: id }).then(() => burrow.dispatch({ type: 'pane/split', sessionId: dropped, dir }));
-      },
     }, head, h('div', { style: { position: 'relative', flex: '1', minHeight: '0', display: 'flex' } }, body, overlay));
     body.style.flex = '1';
     const pane = { el, title, brand, body, overlay, timer, timerText };
@@ -154,6 +147,88 @@
     tickTimers();
     requestAnimationFrame(B.terminals.refitAll);
   }
+
+  // ---------- drag a session from the sidebar onto the stage ----------
+  // A layer covers the stage while dragging (terminals and title bars would swallow the drop)
+  // and a soft box previews where the session will land.
+  const MAX_PANES = 4;
+  const stageEl = document.getElementById('stage');
+  const dropHint = h('div.drop-hint', {}, h('span'));
+  const dropLayer = h('div.drop-layer', {}, dropHint);
+  stageEl.append(dropLayer);
+  let dragId = null;
+  let dropAt = null;
+
+  B.beginSessionDrag = (id) => {
+    dragId = id;
+    dropAt = null;
+    dropLayer.classList.add('on');
+    dropHint.classList.remove('show');
+  };
+  function endDrag() {
+    dragId = null;
+    dropAt = null;
+    dropLayer.classList.remove('on');
+    dropHint.classList.remove('show');
+  }
+  document.addEventListener('dragend', endDrag);
+
+  /** Which pane and side the pointer is over, plus the box to preview. */
+  function zoneAt(x, y) {
+    const page = currentPage();
+    const ids = page.panes.filter((id) => paneEls.get(id)?.el.isConnected);
+    if (!ids.length) return { target: null, side: 'center', rect: document.getElementById('panes').getBoundingClientRect(), label: 'Open here' };
+    for (const id of ids) {
+      const r = paneEls.get(id).el.getBoundingClientRect();
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+      if (id === dragId) return null;
+      const others = ids.filter((x2) => x2 !== dragId).length;
+      const fx = (x - r.left) / r.width;
+      const fy = (y - r.top) / r.height;
+      let side;
+      if (others >= MAX_PANES) side = 'center';
+      else if (others > 1) side = page.dir === 'col' ? (fy < 0.5 ? 'top' : 'bottom') : (fx < 0.5 ? 'left' : 'right');
+      else side = fy < 0.22 ? 'top' : fy > 0.78 ? 'bottom' : fx < 0.5 ? 'left' : 'right';
+      const half = {
+        left: { left: r.left, top: r.top, width: r.width / 2, height: r.height },
+        right: { left: r.left + r.width / 2, top: r.top, width: r.width / 2, height: r.height },
+        top: { left: r.left, top: r.top, width: r.width, height: r.height / 2 },
+        bottom: { left: r.left, top: r.top + r.height / 2, width: r.width, height: r.height / 2 },
+        center: { left: r.left, top: r.top, width: r.width, height: r.height },
+      }[side];
+      return { target: id, side, rect: half, label: side === 'center' ? 'Replace' : 'Split here' };
+    }
+    return null;
+  }
+
+  dropLayer.addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const z = zoneAt(e.clientX, e.clientY);
+    dropAt = z;
+    dropHint.classList.toggle('show', Boolean(z));
+    if (!z) return;
+    const s = stageEl.getBoundingClientRect();
+    const gap = 4;
+    Object.assign(dropHint.style, {
+      left: `${z.rect.left - s.left + gap}px`,
+      top: `${z.rect.top - s.top + gap}px`,
+      width: `${z.rect.width - gap * 2}px`,
+      height: `${z.rect.height - gap * 2}px`,
+    });
+    dropHint.firstChild.textContent = z.label;
+  });
+  dropLayer.addEventListener('dragleave', (e) => {
+    if (e.target === dropLayer && !dropLayer.contains(e.relatedTarget)) dropHint.classList.remove('show');
+  });
+  dropLayer.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const id = dragId;
+    const z = dropAt;
+    endDrag();
+    if (id && z) burrow.dispatch({ type: 'pane/place', sessionId: id, target: z.target, side: z.side });
+  });
 
   // ---------- resizable splits ----------
   const gutters = [];
@@ -222,7 +297,8 @@
       h('p', {}, hasProjects ? 'Pick a session on the left, or start a new one.' : 'Add a project folder, then start Claude Code, Codex or any agent in it.'),
       h('div.row', {},
         hasProjects ? h('button.btn.primary', { onClick: () => B.newSessionDialog() }, 'New session ', h('kbd', {}, 'Ctrl Shift N')) : null,
-        h('button.btn', { onClick: () => B.addProject() }, 'Add project ', h('kbd', {}, 'Ctrl Shift O')))));
+        h('button.btn', { onClick: () => B.addProject() }, 'Add project ', h('kbd', {}, 'Ctrl Shift O'))),
+      h('div.credit', {}, 'Developed by MK')));
   }
 
   function focusPane(id) {

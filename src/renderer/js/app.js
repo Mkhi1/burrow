@@ -15,6 +15,11 @@
   B.detected = boot.detected || {};
   // What's really running in a session (a Terminal may be running Claude Code).
   B.agentOf = (session) => B.detected[session.id] || session.agent;
+  // "Working" mark: a 3×3 square of dots lit in a loop around its edge, in the agent's color.
+  const AGENT_COLORS = { claude: '#ff8a3d' };
+  B.agentColor = (agentId) => AGENT_COLORS[agentId] || '#fff';
+  B.workingMark = (agentId) =>
+    `<span class="dots-loader" style="--c:${B.agentColor(agentId)}">${'<i></i>'.repeat(9)}</span>`;
   const systemReduce = matchMedia('(prefers-reduced-motion: reduce)');
   // Motion is on unless the user chose to follow Windows' "reduce animations".
   const computeReduce = () => B.state.settings.motion === 'system' && systemReduce.matches;

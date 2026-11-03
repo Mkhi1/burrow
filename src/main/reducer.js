@@ -56,7 +56,9 @@ const currentIndex = (state) => Math.min(Math.max(state.settings.page, 0), state
 
 /** Put a session in the focused pane of the current page (or the first pane). */
 function showSession(state, sessionId) {
-  const pageIdx = state.pages.findIndex((p) => p.panes.includes(sessionId));
+  // Prefer the page in view; a session can be on several pages after a drag.
+  const here = state.pages[currentIndex(state)]?.panes.includes(sessionId);
+  const pageIdx = here ? currentIndex(state) : state.pages.findIndex((p) => p.panes.includes(sessionId));
   if (pageIdx >= 0) {
     const withPage = { ...state, settings: { ...state.settings, page: pageIdx } };
     return mapPage(withPage, pageIdx, (p) => ({ ...p, focus: sessionId }));
@@ -166,6 +168,25 @@ function reduce(state, action) {
         }
         const at = p.panes.length ? slot + 1 : 0;
         return { ...p, panes: [...p.panes.slice(0, at), id, ...p.panes.slice(at)], focus: id, sizes: undefined };
+      });
+    }
+    case 'pane/place': {
+      // Drag-and-drop: put a session beside (or in place of) a pane on the current page.
+      // side: 'left' | 'right' | 'top' | 'bottom' | 'center'. The session stays on its own page too,
+      // so closing this pane later leaves that page as it was.
+      const id = action.sessionId;
+      const sides = { left: ['row', 0], right: ['row', 1], top: ['col', 0], bottom: ['col', 1] };
+      if (!state.sessions.some((x) => x.id === id) || !(action.side in sides || action.side === 'center')) return state;
+      return mapPage(state, currentIndex(state), (p) => {
+        const rest = p.panes.filter((x) => x !== id);
+        const t = rest.indexOf(action.target);
+        if (t < 0 || action.side === 'center' || rest.length >= MAX_PANES) {
+          if (t < 0) return { ...p, panes: rest.length >= MAX_PANES ? rest : [...rest, id], focus: id, sizes: undefined };
+          return { ...p, panes: rest.map((x, i) => (i === t ? id : x)), focus: id, sizes: undefined };
+        }
+        const [dir, after] = sides[action.side];
+        const at = t + after;
+        return { ...p, dir: rest.length === 1 ? dir : p.dir, panes: [...rest.slice(0, at), id, ...rest.slice(at)], focus: id, sizes: undefined };
       });
     }
     case 'pane/close':

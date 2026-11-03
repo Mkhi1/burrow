@@ -217,6 +217,10 @@ let detectTimer = null;
 let detecting = false;
 
 const effectiveAgent = (session) => detected[session.id] || session.agent;
+ptys.agentOf = (id) => {
+  const session = state.sessions.find((s) => s.id === id);
+  return session ? effectiveAgent(session) : 'shell';
+};
 
 async function detectAgents() {
   if (detecting) return;

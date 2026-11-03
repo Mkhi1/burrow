@@ -3,7 +3,8 @@
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const pty = require('node-pty');
-const { stripAnsi, extractTitle, computeStatus } = require('./status');
+const { Terminal: Headless } = require('@xterm/headless');
+const { stripAnsi, extractTitle, computeStatus, atPrompt } = require('./status');
 
 const SCROLLBACK_BYTES = 1_000_000;
 const TAIL_CHARS = 6000;
@@ -18,6 +19,7 @@ class PtyManager extends EventEmitter {
     super();
     this.terms = new Map();
     this.timer = setInterval(() => this.tick(), TICK_MS);
+    this.agentOf = () => 'shell'; // main sets this: which agent runs in a terminal
   }
 
   has(id) {
@@ -35,7 +37,9 @@ class PtyManager extends EventEmitter {
       env: { ...process.env, ...env, TERM_PROGRAM: 'Burrow', COLORTERM: 'truecolor' },
       useConpty: true,
     });
-    const term = { proc, buffer: '', tail: '', lastOutput: 0, lastInput: 0, status: 'idle', exited: false };
+    // A headless copy of the screen, so status comes from what is visible now, not old output.
+    const screen = new Headless({ cols, rows, scrollback: 200, allowProposedApi: true });
+    const term = { proc, screen, buffer: '', tail: '', lastOutput: 0, lastInput: 0, lastEnter: 0, marks: {}, status: 'idle', exited: false };
     this.terms.set(id, term);
 
     const live = () => this.terms.get(id) === term;
@@ -44,6 +48,8 @@ class PtyManager extends EventEmitter {
       term.buffer = (term.buffer + chunk).slice(-SCROLLBACK_BYTES);
       term.tail = (term.tail + stripAnsi(chunk)).slice(-TAIL_CHARS);
       term.lastOutput = Date.now();
+      screen.write(chunk);
+      if (chunk.includes('\n')) term.marks.linesSinceEnter = (term.marks.linesSinceEnter || 0) + 1;
       const title = extractTitle(chunk);
       if (title) this.emit('title', id, title);
       if (chunk.includes('\x07') && !/\x1b\][^\x07]*\x07/.test(chunk)) this.setStatus(id, term, 'attention');
@@ -62,7 +68,13 @@ class PtyManager extends EventEmitter {
     if (!term || term.exited) return false;
     term.lastInput = Date.now();
     term.proc.write(data);
-    if (data.includes('\r')) this.emit('enter', id);
+    if (data.includes('\r')) {
+      term.lastEnter = term.lastInput;
+      const buf = term.screen.buffer.active;
+      term.marks.enterRow = buf.baseY + buf.cursorY;
+      term.marks.linesSinceEnter = 0;
+      this.emit('enter', id);
+    }
     return true;
   }
 
@@ -78,6 +90,7 @@ class PtyManager extends EventEmitter {
     if (!term || term.exited || cols < 2 || rows < 2) return;
     try {
       term.proc.resize(cols, rows);
+      term.screen.resize(cols, rows);
     } catch {
       /* resizing a dying pty can throw; harmless */
     }
@@ -107,6 +120,7 @@ class PtyManager extends EventEmitter {
     const term = this.terms.get(id);
     if (!term) return;
     this.terms.delete(id);
+    term.screen.dispose();
     try {
       term.proc.kill();
     } catch {
@@ -117,6 +131,23 @@ class PtyManager extends EventEmitter {
   killAll() {
     clearInterval(this.timer);
     for (const id of [...this.terms.keys()]) this.kill(id);
+  }
+
+  /** Visible text right now, and the line the cursor sits on. */
+  screenOf(term) {
+    const buf = term.screen.buffer.active;
+    const lines = [];
+    for (let y = 0; y < term.screen.rows; y++) lines.push(buf.getLine(buf.viewportY + y)?.translateToString(true) || '');
+    const cursorLine = lines[buf.cursorY] || '';
+    // A prompt counts as "back" only on a different line from where Enter was pressed.
+    const row = buf.baseY + buf.cursorY;
+    const moved = row !== term.marks.enterRow || term.marks.linesSinceEnter > 0;
+    if (atPrompt(cursorLine) && moved) term.marks.promptSeen = Date.now();
+    return { screen: lines.join('\n'), cursorLine, fullscreen: buf.type === 'alternate' };
+  }
+
+  statusInput(id, term, now) {
+    return { now, ...term, ...this.screenOf(term), agent: this.agentOf(id), exited: false };
   }
 
   setStatus(id, term, status) {
@@ -132,10 +163,10 @@ class PtyManager extends EventEmitter {
       if (term.exited) continue;
       // A bell-triggered attention state sticks until new output or input arrives.
       if (term.status === 'attention' && now - Math.max(term.lastOutput, term.lastInput) > 700) {
-        const next = computeStatus({ now, lastOutput: term.lastOutput, lastInput: term.lastInput, tail: term.tail, exited: false });
+        const next = computeStatus(this.statusInput(id, term, now));
         if (next === 'idle') continue;
       }
-      this.setStatus(id, term, computeStatus({ now, ...term }));
+      this.setStatus(id, term, computeStatus(this.statusInput(id, term, now)));
     }
   }
 }

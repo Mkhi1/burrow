@@ -69,9 +69,13 @@
         e.preventDefault();
         B.sessionMenu(session.id, { x: e.clientX, y: e.clientY });
       },
-      onDragstart: (e) => e.dataTransfer.setData('text/burrow-session', session.id),
+      onDragstart: (e) => {
+        e.dataTransfer.setData('text/burrow-session', session.id);
+        e.dataTransfer.effectAllowed = 'move';
+        B.beginSessionDrag?.(session.id);
+      },
     },
-    h('span.glyph', { html: GLYPHS[state] }),
+    h('span.glyph', { html: state === 'working' ? B.workingMark(B.agentOf(session)) : GLYPHS[state] }),
     h('span.title', {}, session.title),
     session.pinned ? h('span.pin', { html: icons.pin }) : null,
     trailing(session, state));

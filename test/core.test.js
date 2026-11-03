@@ -79,12 +79,30 @@ test('stripAnsi removes colors', () => {
 
 test('computeStatus', () => {
   const now = 10_000;
-  assert.equal(computeStatus({ now, lastOutput: now - 100, lastInput: 0, tail: '', exited: false }), 'busy');
-  assert.equal(computeStatus({ now, lastOutput: now - 100, lastInput: now - 200, tail: '', exited: false }), 'idle');
-  assert.equal(computeStatus({ now, lastOutput: now - 5000, lastInput: 0, tail: '', exited: false }), 'idle');
-  assert.equal(computeStatus({ now, lastOutput: now - 1000, lastInput: 0, tail: 'Do you want to proceed?\n❯ 1. Yes', exited: false }), 'attention');
-  assert.equal(computeStatus({ now, lastOutput: now - 2000, lastInput: 0, tail: '· Thinking… (esc to interrupt)', exited: false }), 'busy');
-  assert.equal(computeStatus({ now, lastOutput: 0, lastInput: 0, tail: '', exited: true }), 'exited');
+  assert.equal(computeStatus({ now, lastOutput: now - 100, lastInput: 0, exited: false }), 'busy');
+  assert.equal(computeStatus({ now, lastOutput: now - 100, lastInput: now - 200, exited: false }), 'idle');
+  assert.equal(computeStatus({ now, lastOutput: now - 5000, lastInput: 0, exited: false }), 'idle');
+  assert.equal(computeStatus({ now, lastOutput: now - 1000, lastInput: 0, screen: 'Do you want to proceed?\n❯ 1. Yes', exited: false }), 'attention');
+  assert.equal(computeStatus({ now, lastOutput: 0, lastInput: 0, exited: true }), 'exited');
+});
+
+test('agents are working only while their working line is on screen', () => {
+  const marks = {};
+  const base = { lastOutput: 9_900, lastInput: 0, agent: 'claude', exited: false, marks };
+  assert.equal(computeStatus({ ...base, now: 10_000, screen: '✻ Thinking… (5s · esc to interrupt)' }), 'busy');
+  // still redrawing its idle screen, but the working line is gone: done
+  assert.equal(computeStatus({ ...base, now: 11_500, lastOutput: 11_450, screen: '> ' }), 'idle');
+});
+
+test('a shell command is working until the prompt comes back', () => {
+  const marks = { promptSeen: 1_000 };
+  const base = { lastInput: 2_000, lastEnter: 2_000, agent: 'shell', exited: false, marks };
+  // a slow download that prints nothing for a while is still running
+  assert.equal(computeStatus({ ...base, now: 9_000, lastOutput: 3_000, cursorLine: 'Downloading 45%' }), 'busy');
+  // the prompt came back on a new line (the terminal manager records that as promptSeen)
+  assert.equal(computeStatus({ ...base, marks: { promptSeen: 9_400 }, now: 9_500, lastOutput: 8_000, cursorLine: 'PS C:\\x> ' }), 'idle');
+  // full-screen apps (vim, less) fall back to output timing
+  assert.equal(computeStatus({ ...base, fullscreen: true, now: 9_000, lastOutput: 3_000 }), 'idle');
 });
 
 test('buildLaunch wraps agents in the shell and adds MCP config for Claude', () => {
@@ -227,4 +245,26 @@ test('editor refuses files reached through a link that points outside the projec
   assert.ok(files.safeJoin(root, 'new-file.md').endsWith('new-file.md'));
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(outside, { recursive: true, force: true });
+});
+
+test('dragging a session places it beside a pane and keeps its own page', () => {
+  let s = addSession(withProject(), 's1');
+  s = reduce(s, { type: 'session/create', projectId: 'p1', agent: 'claude', id: 's2', show: false });
+  s = reduce(s, { type: 'pane/place', sessionId: 's2', target: 's1', side: 'left' });
+  assert.deepEqual(s.pages[0].panes, ['s2', 's1']);
+  assert.equal(s.pages[0].dir, 'row');
+  s = reduce(s, { type: 'pane/place', sessionId: 's2', target: 's1', side: 'bottom' });
+  assert.deepEqual(s.pages[0].panes, ['s1', 's2']);
+  assert.equal(s.pages[0].dir, 'col');
+  s = reduce(s, { type: 'page/add' });
+  s = reduce(s, { type: 'pane/place', sessionId: 's2', target: null, side: 'center' });
+  assert.deepEqual(s.pages[1].panes, ['s2']);
+  s = reduce(s, { type: 'page/go', index: 0 });
+  // closing the split pane leaves the session on its own page, and clicking it goes there
+  s = reduce(s, { type: 'pane/close', sessionId: 's2' });
+  assert.deepEqual(s.pages[0].panes, ['s1']);
+  s = reduce(s, { type: 'session/show', id: 's2' });
+  assert.equal(s.settings.page, 1);
+  assert.deepEqual(s.pages[0].panes, ['s1']);
+  assert.equal(reduce(s, { type: 'pane/place', sessionId: 'nope', target: null, side: 'left' }), s);
 });

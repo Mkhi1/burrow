@@ -261,7 +261,8 @@
 
     function draw() {
       const st = B.state.settings;
-      body.replaceChildren(
+      // hidden optional rows are null; replaceChildren would print them as text
+      body.replaceChildren(...[
         h('div.section-title', {}, 'Appearance'),
         h('div.setting-row', {}, h('div', {}, 'Motion', h('div.desc', {}, 'Animations, spinners and moving themes')),
           h('div.chips', {}, ...[['on', 'Always on'], ['system', 'Follow Windows']].map(([v, l]) =>
@@ -299,10 +300,10 @@
         h('div.setting-row', {}, h('div', {}, `Burrow ${B.update?.current || ''}`, h('div.desc', {}, updateText())),
           h('button.btn', { onClick: async () => { await burrow.checkUpdate(); setTimeout(draw, 1500); } }, 'Check now')),
         h('div.section-title', {}, 'Shortcuts'),
-        h('div.shortcuts', {}, ...SHORTCUTS.flatMap(([k, d]) => [h('span', {}, d), h('kbd', {}, k)])));
+        h('div.shortcuts', {}, ...SHORTCUTS.flatMap(([k, d]) => [h('span', {}, d), h('kbd', {}, k)]))].filter(Boolean));
     }
     draw();
-    modal(h('div', {}, h('header', {}, 'Settings'), body, h('footer', {})));
+    modal(h('div', {}, h('header', {}, 'Settings'), body, h('footer.credit', {}, 'Developed by MK')));
   }
 
   function updateText() {
