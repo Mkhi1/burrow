@@ -14,12 +14,17 @@
 
 Run Claude Code, Codex, OpenCode, Gemini CLI, Kimi, Cursor Agent or a plain shell side by side, organised by project, on a blurred black glass window.
 
-## What's new in 0.3.3
+## What's new
+
+![Two terminals working side by side, with the working marks in the sidebar](docs/screenshot-split.png)
+
+![Dragging a session from the sidebar: the preview shows it will open on the right half](docs/screenshot-drag.png)
+
 
 - **Drag to split:** drag a session from the sidebar onto the screen. A preview shows where it lands: left or right half, top or bottom, or in place of a pane. The session also stays on its own page, so closing the split pane leaves that page as it was.
 - **Accurate working status:** Burrow now reads what is on each terminal's screen right now. Claude Code, Codex, Gemini and OpenCode count as working only while their "esc to interrupt" line is visible, so you see the moment they finish. Plain terminals count as working from Enter until the prompt comes back, so a quiet download still shows as running.
 - **New working mark:** a 3×3 square of dots lit in a loop around its edge. It is orange for Claude Code and white for other agents, in the sidebar and in the pane title.
-- **Fixes:** a stray "nullnull" in Settings is gone, and "Developed by MK" now shows in Settings and on the welcome screen.
+- **Fixes:** thin dark scrollbars everywhere (no more white bar under code blocks), a stray "nullnull" in Settings is gone, and "Developed by MK" now shows in Settings and on the welcome screen.
 
 ## Download
 
