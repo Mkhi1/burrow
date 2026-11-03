@@ -4,11 +4,21 @@
   const { h, icons } = B;
   const app = document.getElementById('app');
 
+  const pendingOpens = [];
+  let appReady = false;
+  burrow.onOpenFile((projectId, rel) => (appReady ? B.editor.open(projectId, rel) : pendingOpens.push([projectId, rel])));
+
   const boot = await burrow.getState();
   B.state = boot.state;
   B.agents = boot.agents;
   B.statuses = boot.statuses;
-  B.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  B.detected = boot.detected || {};
+  // What's really running in a session (a Terminal may be running Claude Code).
+  B.agentOf = (session) => B.detected[session.id] || session.agent;
+  const systemReduce = matchMedia('(prefers-reduced-motion: reduce)');
+  // Motion is on unless the user chose to follow Windows' "reduce animations".
+  const computeReduce = () => B.state.settings.motion === 'system' && systemReduce.matches;
+  B.reduceMotion = computeReduce();
   B.unread = {};
 
   B.sessionById = (id) => B.state.sessions.find((s) => s.id === id);
@@ -27,7 +37,9 @@
   };
   B.focusTerminal = () => {
     const page = B.panes.currentPage();
-    if (page.focus) B.terminals.focus(page.focus);
+    if (!page.focus) return;
+    if (B.editor?.isEditorId(page.focus)) B.editor.focus(page.focus);
+    else B.terminals.focus(page.focus);
   };
 
   // ---------- chrome ----------
@@ -102,6 +114,12 @@
     const wasHidden = app.classList.contains('sidebar-hidden');
     app.classList.toggle('sidebar-hidden', !st.sidebarVisible);
     if (wasHidden === st.sidebarVisible) setTimeout(B.terminals.refitAll, 240);
+    B.reduceMotion = computeReduce();
+    document.body.classList.toggle('reduce-motion', B.reduceMotion);
+    B.scenes.setReduce(B.reduceMotion);
+    B.scenes.set(st.scene || 'none');
+    document.getElementById('scene').style.opacity = String(st.sceneStrength ?? 1);
+    document.body.classList.toggle('glass-cards', Boolean(st.scene && st.scene !== 'none' && st.glassCards));
     B.terminals.applySettings();
   }
 
@@ -128,6 +146,7 @@
     { match: (e, k) => e.ctrlKey && e.shiftKey && (k === 'p' || k === 'k'), run: () => B.palette() },
     { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'b', run: toggleSidebar },
     { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'u', run: () => B.usage.toggle() },
+    { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'f', run: () => B.editor.quickOpen() },
     { match: (e, k) => e.ctrlKey && k === ',', run: () => B.settingsDialog() },
     { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'd', run: () => B.splitWithNew('row') },
     { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'e', run: () => B.splitWithNew('col') },
@@ -179,6 +198,40 @@
   // ---------- live updates ----------
 
   burrow.onDemo((view) => view === 'usage' && B.usage.open());
+  burrow.onDetected((map) => {
+    B.detected = map;
+    B.sidebar.render();
+  });
+  // ---------- auto-update ----------
+  B.update = await burrow.updateStatus();
+  function renderUpdate() {
+    const u = B.update || {};
+    const pill = document.getElementById('update-pill');
+    pill.className = `update-pill ${u.state === 'downloading' || u.state === 'ready' ? 'show' : ''}`;
+    if (u.state === 'downloading') {
+      pill.replaceChildren(h('span.spinner'), h('span', {}, `Downloading ${u.version || 'update'}… ${u.percent || 0}%`));
+    } else if (u.state === 'ready') {
+      pill.replaceChildren(
+        h('span.update-dot'),
+        h('span', {}, `Burrow ${u.version} is ready`),
+        h('button.update-btn', { onClick: confirmInstall }, 'Restart'));
+    }
+  }
+  function confirmInstall() {
+    const { close } = B.modal(h('div', {},
+      h('header', {}, `Update to Burrow ${B.update.version}?`),
+      h('div.body', { style: { color: 'var(--text-2)' } },
+        'Burrow will close, update and open again. Running agents will stop, so finish or pause them first. Your projects and sessions are kept (Claude sessions continue with --continue).'),
+      h('footer', {},
+        h('button.btn', { onClick: () => close() }, 'Later'),
+        h('button.btn.primary', { onClick: () => { close(); burrow.installUpdate(); } }, 'Restart and update'))));
+  }
+  burrow.onUpdate((u) => {
+    B.update = u;
+    renderUpdate();
+  });
+  renderUpdate();
+
   burrow.onAgents((list) => {
     B.agents = list;
   });
@@ -197,9 +250,11 @@
     B.unread[id] = kind;
     B.sidebar.render();
   });
-  burrow.onToast((text) => B.toast(`<b>MCP</b> ${B.esc(text)}`));
+  burrow.onToast((text) => B.toast(text.includes(' → ') ? `<b>MCP</b> ${B.esc(text)}` : B.esc(text)));
 
   buildChrome();
   renderAll();
+  appReady = true;
+  pendingOpens.splice(0).forEach(([projectId, rel]) => B.editor.open(projectId, rel));
   B.focusTerminal();
 })();

@@ -191,9 +191,13 @@
     const project = B.state.projects.find((p) => p.id === id);
     menu([
       { label: 'New session…', icon: icons.plus, onClick: () => newSessionDialog({ projectId: id }) },
+      { label: 'Open file…', icon: icons.file, hint: 'Ctrl Shift F', onClick: () => B.editor.quickOpen(id) },
       ...installedAgents().slice(0, 4).map((a) => ({
         label: `Start ${a.name}`, icon: B.agentIcon(a.id), onClick: () => createSession({ projectId: id, agent: a.id }),
       })),
+      'sep',
+      { heading: 'Folder color' },
+      { swatches: FOLDER_COLORS, current: project.color || null, onPick: (color) => burrow.dispatch({ type: 'project/color', id, color }) },
       'sep',
       { label: 'Open in Explorer', icon: icons.open, onClick: () => burrow.openProject(id) },
       { label: 'Rename', icon: icons.edit, onClick: () => {
@@ -227,6 +231,7 @@
     menu([
       { label: 'New session…', icon: icons.plus, hint: 'Ctrl Shift N', onClick: () => newSessionDialog() },
       { label: 'Add project folder…', icon: icons.folder, hint: 'Ctrl Shift O', onClick: addProject },
+      { label: 'Open file…', icon: icons.file, hint: 'Ctrl Shift F', onClick: () => B.editor.quickOpen() },
       { label: 'New page', icon: icons.page, onClick: () => burrow.dispatch({ type: 'page/add' }) },
       'sep',
       { label: B.state.settings.notifications ? 'Mute notifications' : 'Unmute notifications', icon: icons.stop,
@@ -237,6 +242,12 @@
         } },
     ], anchor);
   }
+
+  const FOLDER_COLORS = [
+    { name: 'None', value: null }, { name: 'Red', value: '#f87171' }, { name: 'Orange', value: '#fb923c' },
+    { name: 'Yellow', value: '#facc15' }, { name: 'Green', value: '#4ade80' }, { name: 'Teal', value: '#2dd4bf' },
+    { name: 'Blue', value: '#60a5fa' }, { name: 'Purple', value: '#a78bfa' }, { name: 'Pink', value: '#f472b6' },
+  ];
 
   // ---------- settings ----------
 
@@ -252,6 +263,15 @@
       const st = B.state.settings;
       body.replaceChildren(
         h('div.section-title', {}, 'Appearance'),
+        h('div.setting-row', {}, h('div', {}, 'Motion', h('div.desc', {}, 'Animations, spinners and moving themes')),
+          h('div.chips', {}, ...[['on', 'Always on'], ['system', 'Follow Windows']].map(([v, l]) =>
+            h('button.chip', { class: (st.motion || 'on') === v ? 'on' : '', onClick: () => set({ motion: v }) }, l)))),
+        h('div.field', {}, h('label', {}, 'Theme (animated background)'),
+          h('div.chips', {}, ...B.scenes.list().map((sc) => h('button.chip', { class: (st.scene || 'none') === sc.id ? 'on' : '', onClick: () => set({ scene: sc.id }) }, sc.name)))),
+        st.scene && st.scene !== 'none' ? h('div.setting-row', {}, h('div', {}, 'Art strength', h('div.desc', {}, 'How bright the animation is')),
+          h('input', { type: 'range', min: '0.2', max: '1', step: '0.05', value: st.sceneStrength ?? 1, onInput: (e) => set({ sceneStrength: Number(e.target.value) }) })) : null,
+        st.scene && st.scene !== 'none' ? h('div.setting-row', {}, h('div', {}, 'See-through cards', h('div.desc', {}, 'Show the animation softly behind terminals and editors')),
+          toggle(st.glassCards, () => set({ glassCards: !st.glassCards }))) : null,
         h('div.setting-row', {}, h('div', {}, 'Window background', h('div.desc', {}, 'Blur what is behind the window (Windows 11)')),
           h('div.chips', {}, ...MATERIALS.map(([v, l]) => h('button.chip', { class: st.material === v ? 'on' : '', onClick: () => set({ material: v }) }, l)))),
         h('div.setting-row', {}, h('div', {}, 'Tint', h('div.desc', {}, 'How dark the glass is')),
@@ -275,6 +295,9 @@
           toggle(st.notifications, () => set({ notifications: !st.notifications }))),
         h('div.setting-row', {}, h('div', {}, 'Installed agents'),
           h('button.btn', { onClick: async () => { await checkAgents({ announce: true }); draw(); } }, 'Check agents')),
+        h('div.section-title', {}, 'Updates'),
+        h('div.setting-row', {}, h('div', {}, `Burrow ${B.update?.current || ''}`, h('div.desc', {}, updateText())),
+          h('button.btn', { onClick: async () => { await burrow.checkUpdate(); setTimeout(draw, 1500); } }, 'Check now')),
         h('div.section-title', {}, 'Shortcuts'),
         h('div.shortcuts', {}, ...SHORTCUTS.flatMap(([k, d]) => [h('span', {}, d), h('kbd', {}, k)])));
     }
@@ -282,11 +305,23 @@
     modal(h('div', {}, h('header', {}, 'Settings'), body, h('footer', {})));
   }
 
+  function updateText() {
+    const u = B.update || {};
+    return {
+      dev: 'Updates are off while running from source',
+      checking: 'Checking…',
+      latest: 'You have the latest version',
+      downloading: `Downloading ${u.version}… ${u.percent || 0}%`,
+      ready: `${u.version} is ready — restart from the sidebar`,
+      error: u.error === 'offline' ? "Couldn't check (no internet?)" : `Couldn't check: ${u.error}`,
+    }[u.state] || 'Checks automatically every few hours';
+  }
+
   const SHORTCUTS = [
     ['Ctrl Shift N', 'New session'], ['Ctrl Shift O', 'Add project'], ['Ctrl Shift P', 'Jump to session'], ['Ctrl Shift B', 'Toggle sidebar'],
     ['Ctrl Shift D', 'Split right'], ['Ctrl Shift E', 'Split down'], ['Ctrl Shift W', 'Close pane'], ['Ctrl 1…9', 'Go to session'],
     ['Ctrl Tab', 'Next session'], ['Ctrl Alt ← →', 'Switch page'], ['Ctrl + / −', 'Font size'], ['F2', 'Rename session'],
-    ['Ctrl Shift U', 'Token usage'], ['F11', 'Full screen'], ['Drag divider', 'Resize panes'], ['Shift Enter', 'Newline in prompt'], ['Ctrl ,', 'Settings'],
+    ['Ctrl Shift U', 'Token usage'], ['Ctrl Shift F', 'Open file'], ['Ctrl S', 'Save file'], ['Ctrl Shift V', 'Markdown preview'], ['F11', 'Full screen'], ['Drag divider', 'Resize panes'], ['Shift Enter', 'Newline in prompt'], ['Ctrl ,', 'Settings'],
   ];
 
   // ---------- quick switcher ----------
@@ -299,6 +334,7 @@
     const commands = [
       { title: 'New session', meta: 'Ctrl Shift N', icon: icons.plus, run: () => newSessionDialog() },
       { title: 'Add project folder', meta: 'Ctrl Shift O', icon: icons.folder, run: addProject },
+      { title: 'Open file', meta: 'Ctrl Shift F', icon: icons.file, run: () => B.editor.quickOpen() },
       { title: 'New page', meta: '', icon: icons.page, run: () => burrow.dispatch({ type: 'page/add' }) },
       { title: 'Token usage', meta: 'Ctrl Shift U', icon: icons.chart, run: () => B.usage.open() },
       { title: 'Settings', meta: 'Ctrl ,', icon: icons.gear, run: settingsDialog },
@@ -308,7 +344,7 @@
       const sessions = B.state.sessions.map((s) => ({
         title: s.title,
         meta: `${B.state.projects.find((p) => p.id === s.projectId)?.name || ''} · ${B.statuses[s.id] || 'dormant'}`,
-        icon: B.agentIcon(s.agent),
+        icon: B.agentIcon(B.agentOf(s)),
         run: () => B.showSession(s.id),
       }));
       items = [...sessions, ...commands].filter((it) => !q || `${it.title} ${it.meta}`.toLowerCase().includes(q));

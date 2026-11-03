@@ -15,6 +15,9 @@
   };
 
   const terms = new Map();
+  const seeThrough = () => document.body.classList.contains('glass-cards');
+  const themeNow = () => ({ ...THEME, background: seeThrough() ? 'rgba(0,0,0,0)' : THEME.background });
+  let lastSeeThrough = null;
 
   function create(id) {
     const settings = B.state.settings;
@@ -26,8 +29,9 @@
       cursorBlink: true,
       cursorStyle: 'bar',
       allowProposedApi: true,
+      allowTransparency: true,
       scrollback: 10000,
-      theme: THEME,
+      theme: themeNow(),
       macOptionIsMeta: true,
       windowsPty: { backend: 'conpty' },
     });
@@ -148,6 +152,10 @@
 
   function applySettings() {
     const { fontSize, fontFamily } = B.state.settings;
+    if (lastSeeThrough !== seeThrough()) {
+      lastSeeThrough = seeThrough();
+      for (const entry of terms.values()) entry.term.options.theme = themeNow();
+    }
     for (const entry of terms.values()) {
       if (entry.term.options.fontSize === fontSize && entry.term.options.fontFamily === fontFamily) continue;
       entry.term.options.fontSize = fontSize;

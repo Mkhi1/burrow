@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Menu, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { reduce, normalize } = require('./reducer');
@@ -8,6 +8,10 @@ const { PtyManager } = require('./ptyManager');
 const { findAgent, detectInstalled, resolveShell, buildLaunch, freshPath } = require('./agents');
 const { startBridge } = require('./bridge');
 const { UsageService } = require('./usage');
+const { agentsUnder, listProcesses } = require('./agentDetect');
+const { targetFromArgv } = require('./openPath');
+const files = require('./files');
+const { startUpdater } = require('./updater');
 
 app.setAppUserModelId('app.burrow.terminal');
 if (process.env.BURROW_USER_DATA) app.setPath('userData', process.env.BURROW_USER_DATA);
@@ -24,6 +28,7 @@ let bridge = null;
 let saveTimer = null;
 const ptys = new PtyManager();
 let usage = null;
+let updater = null;
 
 // ---------- state ----------
 
@@ -175,10 +180,11 @@ function notify(id, status) {
   if (!session || isVisible(id)) return;
   send('unread', id, status === 'attention' ? 'attention' : 'done');
   // Plain terminals only get the sidebar dot, never a popup.
-  if (!state.settings.notifications || session.agent === 'shell' || !Notification.isSupported()) return;
+  const agentId = effectiveAgent(session);
+  if (!state.settings.notifications || agentId === 'shell' || !Notification.isSupported()) return;
   const n = new Notification({
     title: session.title,
-    body: status === 'attention' ? `${findAgent(session.agent).name} needs your input` : `${findAgent(session.agent).name} finished`,
+    body: status === 'attention' ? `${findAgent(agentId).name} needs your input` : `${findAgent(agentId).name} finished`,
     silent: false,
   });
   n.on('click', () => {
@@ -196,7 +202,49 @@ ptys.on('status', (id, status) => {
   send('status', id, status);
   trackForNotify(id, status);
 });
-ptys.on('exit', (id) => send('status', id, 'exited'));
+ptys.on('exit', (id) => {
+  delete detected[id];
+  send('status', id, 'exited');
+  send('detected', { ...detected });
+});
+
+// ---------- what is really running? ----------
+// A "Terminal" session may be running Claude Code, and a Claude session may have
+// exited back to the shell. We look at each shell's child processes to know.
+
+const detected = {}; // sessionId -> agent id ('shell' when nothing is running)
+let detectTimer = null;
+let detecting = false;
+
+const effectiveAgent = (session) => detected[session.id] || session.agent;
+
+async function detectAgents() {
+  if (detecting) return;
+  detecting = true;
+  try {
+    const pids = ptys.pids();
+    const ids = Object.keys(pids);
+    if (!ids.length) return;
+    const found = agentsUnder(await listProcesses(), Object.values(pids));
+    const changed = {};
+    for (const id of ids) {
+      const agent = found[pids[id]] || 'shell';
+      if (detected[id] !== agent) changed[id] = detected[id] = agent;
+    }
+    if (Object.keys(changed).length) send('detected', { ...detected });
+  } finally {
+    detecting = false;
+  }
+}
+
+/** Check soon (after the program had time to start), collapsing bursts of Enter presses. */
+function scheduleDetect(delay = 2500) {
+  clearTimeout(detectTimer);
+  detectTimer = setTimeout(detectAgents, delay);
+}
+
+ptys.on('enter', () => scheduleDetect());
+setInterval(() => ptys.pids && Object.keys(ptys.pids()).length && detectAgents(), 10000);
 
 // ---------- bridge for MCP ----------
 
@@ -205,7 +253,7 @@ const bridgeHandlers = {
     sessions: state.sessions.map((s) => ({
       id: s.id,
       title: s.title,
-      agent: s.agent,
+      agent: effectiveAgent(s),
       project: findProject(s.projectId)?.name,
       projectPath: findProject(s.projectId)?.path,
       status: ptys.statusOf(s.id),
@@ -252,6 +300,7 @@ async function refreshAgents() {
 // Types into Burrow's own terminals from inside the app; never touches the real keyboard.
 function runDemo() {
   if (!process.env.BURROW_DEMO) return;
+  win.webContents.on('console-message', (e) => console.log('[renderer]', e.message || ''));
   win.setAlwaysOnTop(true, 'screen-saver');
   if (process.env.BURROW_DEMO_VIEW === 'usage') {
     setTimeout(() => send('demo', 'usage'), 1500);
@@ -260,13 +309,25 @@ function runDemo() {
   setTimeout(() => {
     for (const s of state.sessions) {
       if (!ptys.has(s.id)) continue;
-      if (s.agent === 'shell') ptys.write(s.id, 'npm test\r');
+      if (s.agent === 'shell') ptys.write(s.id, `${process.env.BURROW_DEMO_CMD || 'npm test'}\r`);
       if (s.agent === 'claude') ptys.write(s.id, 'add a dark-mode toggle to the settings page and update the tokens');
     }
   }, 9000);
 }
 
 // ---------- window ----------
+
+/** Shrink/move the window so it fits inside the screen it is on. */
+function keepOnScreen() {
+  if (!win || win.isMaximized() || win.isFullScreen()) return;
+  const b = win.getBounds();
+  const area = screen.getDisplayMatching(b).workArea;
+  const width = Math.min(b.width, area.width);
+  const height = Math.min(b.height, area.height);
+  const x = Math.min(Math.max(b.x, area.x), area.x + area.width - width);
+  const y = Math.min(Math.max(b.y, area.y), area.y + area.height - height);
+  if (x !== b.x || y !== b.y || width !== b.width || height !== b.height) win.setBounds({ x, y, width, height });
+}
 
 function applyMaterial() {
   if (!win || process.platform !== 'win32') return;
@@ -298,9 +359,14 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   win.once('ready-to-show', () => {
-    win.show();
+    keepOnScreen();
+    // Test windows (BURROW_NO_FOCUS) never steal the keyboard from the real app.
+    if (process.env.BURROW_NO_FOCUS || process.env.BURROW_DEMO) win.showInactive();
+    else win.show();
     runDemo();
   });
+  // Launched from the right-click menu: open that folder once the page is ready.
+  win.webContents.once('did-finish-load', () => openTarget(targetFromArgv(process.argv)));
   win.on('focus', () => {
     win.flashFrame(false);
     if (Date.now() - lastAgentCheck > 5000) refreshAgents();
@@ -316,7 +382,7 @@ function createWindow() {
 // ---------- IPC ----------
 
 function registerIpc() {
-  ipcMain.handle('state:get', () => ({ state, agents, statuses: statuses() }));
+  ipcMain.handle('state:get', () => ({ state, agents, statuses: statuses(), detected: { ...detected } }));
   ipcMain.handle('dispatch', (_e, action) => dispatch(action));
 
   ipcMain.handle('session:new', (_e, opts) => createSession(opts));
@@ -363,6 +429,30 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle('agents:refresh', () => refreshAgents());
+  ipcMain.handle('update:status', () => updater.status());
+  ipcMain.handle('update:check', () => updater.check());
+  ipcMain.handle('update:install', () => updater.install());
+
+  // ----- editor: files are only reachable inside a known project -----
+  const projectRoot = (id) => {
+    const p = findProject(id);
+    if (!p) throw new Error('Unknown project');
+    return p.path;
+  };
+  const watchers = new Map(); // paneKey -> stop()
+  ipcMain.handle('files:list', (_e, projectId) => files.listFiles(projectRoot(projectId)));
+  ipcMain.handle('file:read', (_e, projectId, rel) => files.readText(projectRoot(projectId), rel));
+  ipcMain.handle('file:write', (_e, projectId, rel, text) => files.writeText(projectRoot(projectId), rel, text));
+  ipcMain.handle('file:watch', (_e, projectId, rel) => {
+    const key = `${projectId}:${rel}`;
+    watchers.get(key)?.();
+    watchers.set(key, files.watchFile(projectRoot(projectId), rel, () => send('file:changed', projectId, rel)));
+  });
+  ipcMain.handle('file:unwatch', (_e, projectId, rel) => {
+    const key = `${projectId}:${rel}`;
+    watchers.get(key)?.();
+    watchers.delete(key);
+  });
 
   ipcMain.on('pty:write', (_e, id, data) => ptys.write(id, data));
   ipcMain.on('pty:resize', (_e, id, cols, rows) => ptys.resize(id, cols, rows));
@@ -374,11 +464,36 @@ function registerIpc() {
   ipcMain.on('shell:external', (_e, url) => /^https?:/.test(url) && shell.openExternal(url));
 }
 
-app.on('second-instance', () => {
+// ---------- "Open in Burrow" (Explorer right-click) ----------
+
+/** Open a right-clicked folder/file: add it as a project and show a session there. */
+function openTarget(target) {
+  if (!target) return;
+  dispatch({ type: 'project/add', path: target.dir });
+  const project = state.projects.find((p) => p.path.toLowerCase() === target.dir.toLowerCase());
+  if (!project) return;
+  if (project.collapsed) dispatch({ type: 'project/toggle', id: project.id });
+  // Reuse the project's newest running session; otherwise start one with the default agent.
+  const running = state.sessions
+    .filter((s) => s.projectId === project.id && ptys.has(s.id))
+    .sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0];
+  if (target.file) {
+    // A file: open it in the editor (beside the agent if one is open).
+    const rel = path.relative(project.path, target.file).split(path.sep).join('/');
+    send('open-file', project.id, rel);
+    return;
+  }
+  if (running) dispatch({ type: 'session/show', id: running.id });
+  else createSession({ projectId: project.id });
+  send('toast', `Opened ${project.name}`);
+}
+
+app.on('second-instance', (_e, argv) => {
   if (win) {
     if (win.isMinimized()) win.restore();
     win.focus();
   }
+  openTarget(targetFromArgv(argv));
 });
 
 app.whenReady().then(async () => {
@@ -387,6 +502,7 @@ app.whenReady().then(async () => {
   agents = await detectInstalled();
   usage = new UsageService(path.join(app.getPath('userData'), 'usage-cache.json'));
   bridge = await startBridge(bridgeHandlers).catch(() => null);
+  updater = startUpdater({ app, send });
   registerIpc();
   createWindow();
 });

@@ -62,6 +62,7 @@ class PtyManager extends EventEmitter {
     if (!term || term.exited) return false;
     term.lastInput = Date.now();
     term.proc.write(data);
+    if (data.includes('\r')) this.emit('enter', id);
     return true;
   }
 
@@ -89,6 +90,13 @@ class PtyManager extends EventEmitter {
   readText(id, maxLines = 80) {
     const tail = this.terms.get(id)?.tail || '';
     return tail.split(/\r?\n/).filter((l) => l.trim()).slice(-maxLines).join('\n');
+  }
+
+  /** Shell pids of live terminals, keyed by session id. */
+  pids() {
+    const out = {};
+    for (const [id, term] of this.terms) if (!term.exited) out[id] = term.proc.pid;
+    return out;
   }
 
   statusOf(id) {

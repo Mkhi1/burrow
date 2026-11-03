@@ -44,6 +44,19 @@
     for (const it of items) {
       if (it === 'sep') el.append(h('div.sep'));
       else if (it.heading) el.append(h('div.heading', {}, it.heading));
+      else if (it.swatches) {
+        el.append(h('div.menu-swatches', {}, ...it.swatches.map((c) => h('button.menu-swatch', {
+          class: c.value === it.current ? 'on' : '',
+          title: c.name,
+          style: { background: c.value || 'transparent' },
+          html: c.value ? '' : '<svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4"><path d="M4 12 12 4"/></svg>',
+          onClick: (e) => {
+            e.stopPropagation();
+            closeMenu();
+            it.onPick(c.value);
+          },
+        }))));
+      }
       else {
         const btn = h('button.item', { class: it.danger ? 'danger' : '', disabled: it.disabled },
           it.icon ? h('span', { html: it.icon }) : null,

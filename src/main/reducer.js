@@ -20,6 +20,10 @@ const DEFAULT_SETTINGS = Object.freeze({
   sidebarWidth: 272,
   sidebarVisible: true,
   page: 0,
+  scene: 'none',
+  sceneStrength: 1,
+  glassCards: true,
+  motion: 'on',
 });
 
 const initialState = () => ({
@@ -84,6 +88,11 @@ function reduce(state, action) {
     }
     case 'project/rename':
       return { ...state, projects: state.projects.map((p) => (p.id === action.id ? { ...p, name: action.name } : p)) };
+    case 'project/color': {
+      const color = action.color == null ? null : String(action.color);
+      if (color !== null && !/^#[0-9a-f]{6}$/i.test(color)) return state;
+      return { ...state, projects: state.projects.map((p) => (p.id === action.id ? { ...p, color } : p)) };
+    }
     case 'project/toggle':
       return { ...state, projects: state.projects.map((p) => (p.id === action.id ? { ...p, collapsed: !p.collapsed } : p)) };
     case 'project/remove': {
@@ -141,6 +150,23 @@ function reduce(state, action) {
       const at = Math.max(page.panes.indexOf(page.focus), 0) + 1;
       const panes = [...page.panes.slice(0, at), action.sessionId, ...page.panes.slice(at)];
       return mapPage(state, idx, (p) => ({ ...p, dir: action.dir || p.dir, panes, focus: action.sessionId, sizes: undefined }));
+    }
+    case 'pane/open': {
+      // Focus it if already open anywhere; else add beside the focused pane (or replace it when full).
+      const id = action.paneId;
+      const pageIdx = state.pages.findIndex((p) => p.panes.includes(id));
+      if (pageIdx >= 0) {
+        const moved = { ...state, settings: { ...state.settings, page: pageIdx } };
+        return mapPage(moved, pageIdx, (p) => ({ ...p, focus: id }));
+      }
+      return mapPage(state, currentIndex(state), (p) => {
+        const slot = Math.max(p.panes.indexOf(p.focus), 0);
+        if (p.panes.length >= MAX_PANES) {
+          return { ...p, panes: p.panes.map((x, i) => (i === slot ? id : x)), focus: id };
+        }
+        const at = p.panes.length ? slot + 1 : 0;
+        return { ...p, panes: [...p.panes.slice(0, at), id, ...p.panes.slice(at)], focus: id, sizes: undefined };
+      });
     }
     case 'pane/close':
       return mapPage(state, currentIndex(state), (p) => dropPanes(p, new Set([action.sessionId])));

@@ -15,25 +15,48 @@
   const visibleOrder = () =>
     B.state.projects.flatMap((p) => (p.collapsed ? [] : orderedSessions(p.id)));
 
-  function glyphFor(session) {
+  /** One clear state per session: working, needs-you, done, ready or asleep. */
+  function stateOf(session) {
     const status = B.statuses[session.id] || 'dormant';
-    const unread = B.unread[session.id];
-    if (status === 'attention' || unread === 'attention') return '<span class="status-dot attention"></span>';
-    if (unread === 'done' && status !== 'busy') return '<span class="status-dot unread"></span>';
-    return B.dots(status === 'busy');
+    if (status === 'dormant' || status === 'exited') return 'asleep';
+    if (status === 'attention' || B.unread[session.id] === 'attention') return 'attention';
+    if (B.panes.elapsed(session.id) != null) return 'working';
+    if (B.unread[session.id] === 'done') return 'done';
+    return 'ready';
+  }
+
+  const GLYPHS = {
+    working: '<span class="spinner"></span>',
+    attention: '<span class="status-dot attention"></span>',
+    done: `<span class="done-check">${icons.check}</span>`,
+    ready: '<span class="ready-dot"></span>',
+    asleep: '',
+  };
+
+  function trailing(session, state) {
+    if (state === 'working') return h('span.elapsed', {}, B.panes.formatElapsed(B.panes.elapsed(session.id)));
+    if (state === 'attention') return h('span.need', {}, 'needs you');
+    const id = B.agentOf(session);
+    const switched = id !== session.agent;
+    return h('span.agent', {
+      class: switched ? 'detected' : '',
+      html: B.agentIcon(id),
+      title: switched ? `Running ${B.agentById(id).name} (detected)` : B.agentById(id).name,
+    });
   }
 
   function sessionRow(session, page) {
-    const status = B.statuses[session.id] || 'dormant';
-    const agent = B.agentById(session.agent);
-    const dormant = status === 'dormant' || status === 'exited';
+    const agent = B.agentById(B.agentOf(session));
+    const state = stateOf(session);
+    const dormant = state === 'asleep';
     const row = h('div.session', {
       class: [
+        `is-${state}`,
         dormant ? 'dormant' : '',
         page.focus === session.id ? 'selected' : '',
         page.panes.includes(session.id) ? 'visible' : '',
       ].join(' '),
-      title: `${session.title}\n${agent.name} · ${status}`,
+      title: `${session.title}\n${agent.name} · ${dormant ? 'not running' : state}`,
       'data-id': session.id,
       'data-key': `s:${session.id}`,
       draggable: 'true',
@@ -48,10 +71,10 @@
       },
       onDragstart: (e) => e.dataTransfer.setData('text/burrow-session', session.id),
     },
-    h('span.glyph', { html: glyphFor(session), style: { color: 'var(--text-2)' } }),
+    h('span.glyph', { html: GLYPHS[state] }),
     h('span.title', {}, session.title),
     session.pinned ? h('span.pin', { html: icons.pin }) : null,
-    h('span.agent', { html: B.agentIcon(session.agent), title: agent.name }));
+    trailing(session, state));
     return row;
   }
 
@@ -79,6 +102,16 @@
     input.addEventListener('click', (e) => e.stopPropagation());
   }
 
+  /** When a folder is closed, show how many sessions hide inside and whether any need you. */
+  function collapsedBadge(project) {
+    const sessions = B.state.sessions.filter((s) => s.projectId === project.id);
+    if (!sessions.length) return null;
+    const statuses = sessions.map((s) => B.unread[s.id] === 'attention' ? 'attention' : B.statuses[s.id]);
+    const live = statuses.includes('attention') ? 'attention' : statuses.includes('busy') ? 'busy' : null;
+    return h('span.count', { title: `${sessions.length} session${sessions.length > 1 ? 's' : ''} hidden` },
+      live ? h('span.count-dot', { class: live }) : null, String(sessions.length));
+  }
+
   function projectRow(project) {
     return h('div.project', {
       'data-key': `p:${project.id}`,
@@ -90,8 +123,10 @@
         B.projectMenu(project.id, { x: e.clientX, y: e.clientY });
       },
     },
-    h('span.folder', { html: icons.folder }),
+    h('span.chev', { html: icons.chevron }),
+    h('span.folder', { html: project.collapsed ? icons.folder : icons.folderOpen, style: project.color ? { color: project.color } : null }),
     h('span.name', {}, project.name),
+    project.collapsed ? collapsedBadge(project) : null,
     h('button.icon-btn.add', {
       html: icons.plus,
       title: 'New session in this project',
@@ -177,7 +212,7 @@
     );
   }
 
-  B.sidebar = { render, visibleOrder, startRename: (id) => {
+  B.sidebar = { stateOf, render, visibleOrder, startRename: (id) => {
     const row = document.querySelector(`.session[data-id="${id}"]`);
     const session = B.sessionById(id);
     if (row && session) startRename(row, session);

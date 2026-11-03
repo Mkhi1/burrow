@@ -30,6 +30,10 @@ Windows may show a SmartScreen warning because the installer isn't code-signed. 
 - **Agent-to-agent messaging (MCP):** every Claude Code session gets tools to list, read, message and start other sessions.
 - **Auto-detect agents:** newly installed CLIs are picked up when you return to the window, or via **Check agents**.
 - **Real terminals:** ConPTY + xterm.js with WebGL rendering, links, copy/paste and resume (`--continue`) after restart.
+- **Simple editor:** `Ctrl+Shift+F` opens any file as a card next to your agent. Markdown gets a live preview with clickable checkboxes; the file reloads when the agent edits it.
+- **Open in Burrow:** right-click a folder or file in Explorer.
+- **Auto-update:** new versions download in the background; restart when you are ready.
+- **Animated themes:** Galaxy (black hole + sparkles), Shark (a glowing character-mosaic shark swimming a loop), Bloom (dot-matrix flowers), Prism (pastel ASCII sphere), Poster (blue ASCII on cream). Drawn in code, light on CPU (about 1–3 ms a frame, slower in the background, paused when minimized).
 - **Look:** Windows 11 Acrylic/Mica blur, black and white theme, smooth motion (respects *reduce motion*).
 
 ## Token usage
@@ -51,10 +55,16 @@ A terminal-style page (`Ctrl+Shift+U`) that shows how many tokens your agents us
 | Go to session 1–9 | `Ctrl+1…9` |
 | Next / previous session | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Token usage | `Ctrl+Shift+U` |
+| Open file (editor) | `Ctrl+Shift+F` |
+| Save file / Markdown preview | `Ctrl+S` / `Ctrl+Shift+V` |
 | Font size | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 | Full screen | `F11` |
 | Rename session | `F2` |
 | Settings | `Ctrl+,` |
+
+## Design
+
+Love the look? [DESIGN.md](DESIGN.md) explains the whole style (colors, type, components, motion) with copy-paste CSS and Tailwind tokens for your own apps.
 
 ## Build from source
 

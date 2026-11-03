@@ -4,7 +4,6 @@
 (() => {
   const { h, icons } = B;
   const paneEls = new Map();
-  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let lastPage = null;
 
   // ---------- working timer ----------
@@ -28,12 +27,36 @@
     return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
   };
 
+  const elapsed = (id) => {
+    const run = runs.get(id);
+    return run ? (run.quietSince || Date.now()) - run.since : null;
+  };
+  let lastWorking = '';
+
   function tickTimers() {
+    if (!B.state) return;
     const now = Date.now();
     for (const [id, run] of runs) if (run.quietSince && now - run.quietSince > GRACE_MS) runs.delete(id);
+    // Sidebar: redraw when the set of working sessions changes, otherwise just update the clocks.
+    const working = [...runs.keys()].sort().join(',');
+    if (working !== lastWorking) {
+      lastWorking = working;
+      B.sidebar.render();
+    } else {
+      for (const el of document.querySelectorAll('.session.is-working')) {
+        const t = elapsed(el.dataset.id);
+        const span = el.querySelector('.elapsed');
+        if (span && t != null) span.textContent = formatElapsed(t);
+      }
+    }
     for (const [id, pane] of paneEls) {
       const run = runs.get(id);
       pane.timer.classList.toggle('show', Boolean(run));
+      // Card-level signal: spinner in the title and a light running along the top edge.
+      if (pane.el.classList.contains('working') !== Boolean(run)) {
+        pane.el.classList.toggle('working', Boolean(run));
+        pane.brand.innerHTML = run ? '<span class="spinner"></span>' : icons.brand;
+      }
       if (run) pane.timerText.textContent = `Working… ${formatElapsed((run.quietSince || now) - run.since)}`;
     }
   }
@@ -45,6 +68,12 @@
   }
 
   function buildPane(id) {
+    if (B.editor.isEditorId(id)) {
+      const pane = B.editor.buildPane(id);
+      pane.el.addEventListener('mousedown', () => focusPane(id));
+      paneEls.set(id, pane);
+      return pane;
+    }
     const title = h('span.title');
     const brand = h('span.brand', { html: icons.brand });
     const body = h('div.pane-body');
@@ -77,6 +106,10 @@
   }
 
   function updatePane(pane, id, focused) {
+    if (B.editor.isEditorId(id)) {
+      pane.el.classList.toggle('focused', focused);
+      return;
+    }
     const session = B.sessionById(id);
     if (!session) return;
     const agent = B.agentById(session.agent);
@@ -95,7 +128,7 @@
     const page = currentPage();
     const container = document.getElementById('panes');
     const empty = document.getElementById('empty');
-    const ids = page.panes.filter((id) => B.sessionById(id));
+    const ids = page.panes.filter((id) => B.sessionById(id) || B.editor.isOpenable(id));
 
     container.className = `panes ${page.dir === 'col' ? 'col' : ''} ${ids.length > 1 ? 'multi' : ''}`;
     // Detach panes that are no longer visible (terminals stay alive in memory).
@@ -113,7 +146,7 @@
     ids.forEach((id) => {
       const pane = paneEls.get(id);
       updatePane(pane, id, id === page.focus);
-      B.terminals.attach(id, pane.body);
+      if (!B.editor.isEditorId(id)) B.terminals.attach(id, pane.body);
     });
     empty.classList.toggle('show', ids.length === 0);
     if (!ids.length) renderEmpty(empty);
@@ -173,7 +206,7 @@
     const index = B.state.settings.page;
     const from = lastPage;
     lastPage = index;
-    if (from == null || from === index || reduceMotion) return;
+    if (from == null || from === index || B.reduceMotion) return;
     const dx = index > from ? 48 : -48;
     const target = empty.classList.contains('show') ? empty : container;
     target.animate(
@@ -201,7 +234,8 @@
   function forget(id) {
     paneEls.get(id)?.el.remove();
     paneEls.delete(id);
-    B.terminals.dispose(id);
+    if (B.editor.isEditorId(id)) B.editor.dispose(id);
+    else B.terminals.dispose(id);
   }
 
   /** Fade a pane out, then remove it from the layout. */
@@ -216,5 +250,5 @@
 
   B.closePane = closePane;
   B.focusPane = focusPane;
-  B.panes = { render, forget, currentPage, trackStatus };
+  B.panes = { render, forget, currentPage, trackStatus, elapsed, formatElapsed };
 })();

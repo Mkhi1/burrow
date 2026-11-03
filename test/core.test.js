@@ -140,3 +140,91 @@ test('findOnPath finds .cmd shims and ignores missing tools', () => {
   assert.equal(findOnPath('missing-tool', dir), null);
   fs.rmSync(dir, { recursive: true });
 });
+
+test('folder colors accept hex or null only', () => {
+  let s = withProject();
+  s = reduce(s, { type: 'project/color', id: 'p1', color: '#4ade80' });
+  assert.equal(s.projects[0].color, '#4ade80');
+  assert.equal(reduce(s, { type: 'project/color', id: 'p1', color: 'red;}' }), s);
+  s = reduce(s, { type: 'project/color', id: 'p1', color: null });
+  assert.equal(s.projects[0].color, null);
+});
+
+const { matchProcess, agentsUnder } = require('../src/main/agentDetect');
+
+test('matchProcess recognises agents by exe or npm package', () => {
+  assert.equal(matchProcess('claude.exe', 'claude.exe --continue'), 'claude');
+  assert.equal(matchProcess('node.exe', 'node C:/npm/node_modules/@anthropic-ai/claude-code/cli.js'), 'claude');
+  assert.equal(matchProcess('node.exe', 'node C:/npm/node_modules/@openai/codex/bin/codex.js'), 'codex');
+  assert.equal(matchProcess('opencode.exe', 'opencode'), 'opencode');
+  assert.equal(matchProcess('git.exe', 'git status'), null);
+  assert.equal(matchProcess('node.exe', 'node claudette.js'), null);
+});
+
+test('agentsUnder finds an agent anywhere below each shell', () => {
+  const ps = [
+    { pid: 10, ppid: 1, name: 'pwsh.exe', cmd: 'pwsh' },
+    { pid: 11, ppid: 10, name: 'cmd.exe', cmd: 'cmd /c claude.cmd' },
+    { pid: 12, ppid: 11, name: 'node.exe', cmd: 'node @anthropic-ai/claude-code/cli.js' },
+    { pid: 20, ppid: 1, name: 'pwsh.exe', cmd: 'pwsh' },
+    { pid: 21, ppid: 20, name: 'git.exe', cmd: 'git log' },
+  ];
+  assert.deepEqual(agentsUnder(ps, [10, 20, 99]), { 10: 'claude', 20: null, 99: null });
+});
+
+const { targetFromArgv } = require('../src/main/openPath');
+
+test('targetFromArgv finds the right-clicked folder or file', () => {
+  const fsx = { exists: (p) => !p.endsWith('missing'), isDir: (p) => !p.endsWith('.txt') };
+  const dir = targetFromArgv(['C:/Apps/Burrow.exe', 'C:/code/app'], fsx);
+  assert.equal(dir.file, null);
+  assert.match(dir.dir, /code.app$/);
+  const file = targetFromArgv(['C:/Apps/Burrow.exe', 'C:/code/app/notes.txt'], fsx);
+  assert.match(file.dir, /code.app$/);
+  assert.match(file.file, /notes\.txt$/);
+  assert.equal(targetFromArgv(['electron.exe', '.', '--enable-logging'], fsx), null);
+  assert.equal(targetFromArgv(['Burrow.exe', 'C:/nope/missing'], fsx), null);
+});
+
+const files = require('../src/main/files');
+
+test('editor file access never leaves the project folder', () => {
+  const root = require('node:path').resolve('/projects/app');
+  assert.ok(files.safeJoin(root, 'src/a.js').endsWith('a.js'));
+  assert.throws(() => files.safeJoin(root, '../secret.txt'));
+  assert.throws(() => files.safeJoin(root, 'C:/Windows/win.ini'));
+});
+
+test('pane/open adds beside the focus, focuses if already open, replaces when full', () => {
+  let s = addSession(withProject(), 's1');
+  s = reduce(s, { type: 'pane/open', paneId: 'edit:p1:README.md' });
+  assert.deepEqual(s.pages[0].panes, ['s1', 'edit:p1:README.md']);
+  assert.equal(s.pages[0].focus, 'edit:p1:README.md');
+  s = reduce(s, { type: 'pane/focus', sessionId: 's1' });
+  const again = reduce(s, { type: 'pane/open', paneId: 'edit:p1:README.md' });
+  assert.deepEqual(again.pages[0].panes, ['s1', 'edit:p1:README.md']);
+  assert.equal(again.pages[0].focus, 'edit:p1:README.md');
+  for (const f of ['a', 'b']) s = reduce(s, { type: 'pane/open', paneId: `edit:p1:${f}.md` });
+  s = reduce(s, { type: 'pane/open', paneId: 'edit:p1:c.md' });
+  assert.equal(s.pages[0].panes.length, 4);
+  assert.ok(s.pages[0].panes.includes('edit:p1:c.md'));
+});
+
+test('editor refuses files reached through a link that points outside the project', (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'burrow-proj-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'burrow-out-'));
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'x');
+  try {
+    fs.symlinkSync(outside, path.join(root, 'link'), 'junction');
+  } catch {
+    t.skip('cannot create links here');
+    return;
+  }
+  assert.throws(() => files.safeJoin(root, 'link/secret.txt'));
+  assert.ok(files.safeJoin(root, 'new-file.md').endsWith('new-file.md'));
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(outside, { recursive: true, force: true });
+});
