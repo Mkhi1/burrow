@@ -69,7 +69,7 @@ Pick one in **Settings → Theme**. They're drawn in code, light on the CPU, and
 - **Real terminals:** ConPTY and xterm.js with WebGL rendering, links, copy/paste and resume (`--continue`) after a restart.
 - **Editor:** `Ctrl+Shift+F` opens any file as a card next to your agents. Markdown gets a live preview with clickable checkboxes, and the file reloads when an agent edits it.
 - **Open in Burrow:** right-click a folder or file in Explorer.
-- **Token usage:** a terminal-style page (`Ctrl+Shift+U`) that reads your Claude Code and Codex logs and shows totals, cache hit rate, per-day bars, projects, models and top sessions.
+- **Token usage:** a terminal-style page (`Ctrl+Shift+U`) that reads your Claude Code and Codex logs. It shows totals and the change from the previous period, an at-a-glance block (busiest day, streak, peak hour, cache saved), a 30-day column chart, per-day bars split by token type, a weekday × hour heatmap, projects, models and top sessions.
 - **Agent-to-agent messaging (MCP):** every Claude Code session gets tools to list, read, message and start other sessions.
 - **Auto-update:** new versions download in the background, so you can restart when you're ready.
 - **Look:** black and white, Windows 11 Acrylic/Mica blur and smooth motion. A Motion setting keeps animations on, or follows Windows' *reduce motion*.
@@ -106,6 +106,7 @@ Windows may show a SmartScreen warning because the installer isn't code-signed. 
 
 ## What's new
 
+- **0.3.7:** a richer token page: comparison with the previous period, an at-a-glance block (busiest day, streak, peak hour, cache saved), a 30-day column chart, per-day bars split by token type, and a weekday × hour heatmap of when you work.
 - **0.3.6:** the Painting theme. App colors are read from the picture. A closed split pane no longer comes up empty on its own page.
 - **0.3.5:** mixed side-by-side and stacked layouts, move, swap and zoom panes, and a smooth glide on every layout change. "Working" no longer sticks when a prompt wraps.
 - **0.3.4:** thin dark scrollbars everywhere.
