@@ -16,6 +16,14 @@ Run Claude Code, Codex, OpenCode, Gemini CLI, Kimi, Cursor Agent or a plain shel
 
 ## What's new
 
+### 0.3.6: the Painting theme
+
+![Burrow with the Painting theme: the artwork drawn as colored ASCII behind two terminals](docs/screenshot-painting.png)
+
+- **Painting:** Repin's *Ivan the Terrible and His Son* (public domain), drawn as full colored ASCII art behind the app. It is never shown as a plain photo.
+- **Colors follow the picture:** light or dark mode, the accent color and the glass tint are read from the painting automatically. Your own accent comes back when you switch themes.
+- **Fix:** a session's pane no longer comes up empty after you close it from a split.
+
 ### 0.3.5: mix side-by-side and stacked panes
 
 ![One tall pane on the left; on the right a wide pane above two smaller ones](docs/screenshot-mixed.png)
