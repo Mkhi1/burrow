@@ -138,7 +138,14 @@ class PtyManager extends EventEmitter {
     const buf = term.screen.buffer.active;
     const lines = [];
     for (let y = 0; y < term.screen.rows; y++) lines.push(buf.getLine(buf.viewportY + y)?.translateToString(true) || '');
-    const cursorLine = lines[buf.cursorY] || '';
+    // The cursor's whole logical line: in a narrow pane a long prompt wraps onto several rows.
+    let cursorLine = '';
+    for (let y = buf.baseY + buf.cursorY; y >= 0; y--) {
+      const line = buf.getLine(y);
+      if (!line) break;
+      cursorLine = line.translateToString(y === buf.baseY + buf.cursorY) + cursorLine;
+      if (!line.isWrapped) break;
+    }
     // A prompt counts as "back" only on a different line from where Enter was pressed.
     const row = buf.baseY + buf.cursorY;
     const moved = row !== term.marks.enterRow || term.marks.linesSinceEnter > 0;

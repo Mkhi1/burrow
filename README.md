@@ -16,6 +16,18 @@ Run Claude Code, Codex, OpenCode, Gemini CLI, Kimi, Cursor Agent or a plain shel
 
 ## What's new
 
+### 0.3.5: mix side-by-side and stacked panes
+
+![One tall pane on the left; on the right a wide pane above two smaller ones](docs/screenshot-mixed.png)
+
+- **Any layout:** drop a session on any edge of any pane to split it that way, so side-by-side and stacked panes can mix (up to 6 per page).
+- **Move and swap:** drag a pane by its title onto another pane's edge to move it, or onto its middle to swap the two.
+- **Smooth:** panes glide to their new place when the layout changes, and every divider resizes only its own group.
+- **Zoom:** the ⤢ button or `Ctrl+Shift+Enter` grows one pane to full size and back.
+- **Fixes:** "Working" no longer sticks in narrow panes where the prompt wraps, and terminal scrollbars only show when you hover.
+
+### 0.3.3
+
 ![Two terminals working side by side, with the working marks in the sidebar](docs/screenshot-split.png)
 
 ![Dragging a session from the sidebar: the preview shows it will open on the right half](docs/screenshot-drag.png)
@@ -36,7 +48,7 @@ Windows may show a SmartScreen warning because the installer isn't code-signed. 
 - **Projects & sessions:** add folders, start any agent inside them, pin, rename (double-click or F2) and reorder.
 - **Live status:** read from the live screen. A looping dot square while an agent works (orange for Claude Code), a pulsing dot when it needs your approval, and a check when it finishes. Native notifications are throttled so they never spam.
 - **Working timer:** shows `Working… 1m 12s` in the title bar while an agent runs.
-- **Splits:** up to 4 panes per page, side by side or stacked. Drag the divider to resize, double-click to reset. Drag a session from the sidebar onto the screen to split it, with a live preview of where it lands.
+- **Splits:** up to 6 panes per page in any mix of side-by-side and stacked: drop on any edge of any pane to split it that way. Drag a pane by its title to move it, or drop it in the middle of another pane to swap. Every divider resizes its own group (double-click to even out), panes glide smoothly to their new place, and `Ctrl+Shift+Enter` zooms one pane to full size and back.
 - **Pages:** multiple layouts, switched with the dots or `Ctrl+Alt+← / →`.
 - **Token usage:** a terminal-style page that reads your Claude Code and Codex logs. It shows totals, cache hit rate, per-day bars, projects, models and top sessions.
 - **Agent-to-agent messaging (MCP):** every Claude Code session gets tools to list, read, message and start other sessions.

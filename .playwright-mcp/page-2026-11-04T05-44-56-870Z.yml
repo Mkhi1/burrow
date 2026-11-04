@@ -1,0 +1,93 @@
+- main [ref=f2e2]:
+  - application "Device Insights smart home demo" [ref=f2e4]:
+    - generic [ref=f2e9]:
+      - region "Device Insights" [ref=f2e11]:
+        - generic:
+          - generic:
+            - heading "Device Insights" [level=1] [ref=f2e12]
+            - button "Open controls" [ref=f2e13] [cursor=pointer]
+        - generic [ref=f2e18]:
+          - button "AC, currently 24 c, on. Activate for details." [ref=f2e19] [cursor=pointer]:
+            - generic [ref=f2e22]:
+              - generic [ref=f2e23]: AC
+              - generic [ref=f2e28]:
+                - button "Details" [ref=f2e29]
+                - generic [ref=f2e31]:
+                  - generic [ref=f2e32]: 24°
+                  - generic [ref=f2e33]: c
+          - button "Ceiling Fan, currently 80 km/h, on. Activate for details." [ref=f2e34] [cursor=pointer]:
+            - generic [ref=f2e37]:
+              - generic [ref=f2e38]: Ceiling Fan
+              - generic [ref=f2e48]:
+                - button "Details" [ref=f2e49]
+                - generic [ref=f2e51]:
+                  - generic [ref=f2e52]: "80"
+                  - generic [ref=f2e53]: km/h
+          - button "Washing Machine, currently 8 kw, on. Activate for details." [ref=f2e54] [cursor=pointer]:
+            - generic [ref=f2e57]:
+              - generic [ref=f2e58]: Washing Machine
+              - generic [ref=f2e65]:
+                - button "Details" [ref=f2e66]
+                - generic [ref=f2e68]:
+                  - generic [ref=f2e69]: "8"
+                  - generic [ref=f2e70]: kw
+          - button "Fridge, currently 4 kw, on. Activate for details." [ref=f2e71] [cursor=pointer]:
+            - generic [ref=f2e74]:
+              - generic [ref=f2e75]: Fridge
+              - generic [ref=f2e81]:
+                - button "Details" [ref=f2e82]
+                - generic [ref=f2e84]:
+                  - generic [ref=f2e85]: "4"
+                  - generic [ref=f2e86]: kw
+          - button "Charger, currently 2 kw, on. Activate for details." [ref=f2e87] [cursor=pointer]:
+            - generic [ref=f2e90]:
+              - generic [ref=f2e91]: Charger
+              - generic [ref=f2e96]:
+                - button "Details" [ref=f2e97]
+                - generic [ref=f2e99]:
+                  - generic [ref=f2e100]: "2"
+                  - generic [ref=f2e101]: kw
+      - generic [aria-hidden]:
+        - generic: 8:44
+      - dialog "AC" [ref=f2e104]:
+        - generic [ref=f2e107]:
+          - generic [ref=f2e109]:
+            - generic [ref=f2e110]: AC
+            - generic [ref=f2e111]: Energy usage · This week
+          - button "Close details" [ref=f2e112] [cursor=pointer]
+        - generic [ref=f2e115]:
+          - generic [ref=f2e116]:
+            - generic [ref=f2e117]: "3.6"
+            - generic [ref=f2e118]: kWhtoday
+          - generic [ref=f2e119]:
+            - generic [ref=f2e120]:
+              - generic [ref=f2e121]: Cost
+              - generic [ref=f2e122]: €0.79
+            - generic [ref=f2e123]:
+              - generic [ref=f2e124]: Runtime
+              - generic [ref=f2e125]: 4h 12m
+            - generic [ref=f2e126]:
+              - generic [ref=f2e127]: Peak
+              - generic [ref=f2e128]: 18:40
+        - generic [ref=f2e131]:
+          - generic [ref=f2e132]:
+            - generic [ref=f2e133]: "3.1"
+            - generic [ref=f2e134]: Avg kWh / day
+          - generic [ref=f2e135]:
+            - generic [ref=f2e136]: "72"
+            - generic [ref=f2e137]: Est. kWh / month
+          - generic [ref=f2e138]:
+            - generic [ref=f2e139]: Tue
+            - generic [ref=f2e140]: Lowest day
+          - generic [ref=f2e141]:
+            - generic [ref=f2e142]: A++
+            - generic [ref=f2e143]: Efficiency
+        - button "Done" [ref=f2e144] [cursor=pointer]
+      - status
+  - generic [ref=f2e145]:
+    - generic [ref=f2e146]: Device Insights
+    - generic [ref=f2e147]: Interactive smart-home concept · tap, drag & pull
+  - generic [ref=f2e152]:
+    - text: Tap a card to open · pull down to refresh · long-press to reorder ·
+    - generic [ref=f2e153]: Esc
+    - text: goes back

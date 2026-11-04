@@ -220,7 +220,7 @@
 
   function splitWithNew(dir, anchor) {
     const focused = B.sessionById(B.panes.currentPage().focus);
-    if (B.panes.currentPage().panes.length >= 4) return B.toast('A page holds up to 4 panes — try a new page');
+    if (B.panes.currentPage().panes.length >= 6) return B.toast('A page holds up to 6 panes — try a new page');
     const projectId = focused?.projectId || B.state.projects[0]?.id;
     if (!projectId) return addProject();
     if (anchor) quickNew(projectId, anchor, { split: dir });
@@ -322,7 +322,7 @@
     ['Ctrl Shift N', 'New session'], ['Ctrl Shift O', 'Add project'], ['Ctrl Shift P', 'Jump to session'], ['Ctrl Shift B', 'Toggle sidebar'],
     ['Ctrl Shift D', 'Split right'], ['Ctrl Shift E', 'Split down'], ['Ctrl Shift W', 'Close pane'], ['Ctrl 1…9', 'Go to session'],
     ['Ctrl Tab', 'Next session'], ['Ctrl Alt ← →', 'Switch page'], ['Ctrl + / −', 'Font size'], ['F2', 'Rename session'],
-    ['Ctrl Shift U', 'Token usage'], ['Ctrl Shift F', 'Open file'], ['Ctrl S', 'Save file'], ['Ctrl Shift V', 'Markdown preview'], ['F11', 'Full screen'], ['Drag divider', 'Resize panes'], ['Shift Enter', 'Newline in prompt'], ['Ctrl ,', 'Settings'],
+    ['Ctrl Shift U', 'Token usage'], ['Ctrl Shift F', 'Open file'], ['Ctrl S', 'Save file'], ['Ctrl Shift V', 'Markdown preview'], ['F11', 'Full screen'], ['Drag divider', 'Resize panes'], ['Drag pane title', 'Move or swap pane'], ['Ctrl Shift Enter', 'Zoom pane'], ['Shift Enter', 'Newline in prompt'], ['Ctrl ,', 'Settings'],
   ];
 
   // ---------- quick switcher ----------

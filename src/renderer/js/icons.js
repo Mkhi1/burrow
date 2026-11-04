@@ -19,6 +19,7 @@ window.B = window.B || {};
     columns: s('<rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M8 3v10M4.2 6h2M4.2 8h2M9.8 6h2"/>'),
     pin: s('<path d="M9.8 2.2 13.8 6.2M11.8 4.2 8.6 7.4 5.4 6.6 4 8l4 4 1.4-1.4-.8-3.2M6 10l-3.3 3.3"/>'),
     splitRight: s('<rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M8 3v10"/>'),
+    zoom: s('<path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9"/>'),
     splitDown: s('<rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M2 8h12"/>'),
     more: '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></svg>',
     close: s('<path d="M4 4l8 8M12 4l-8 8"/>'),

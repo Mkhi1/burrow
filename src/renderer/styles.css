@@ -176,8 +176,7 @@ body.blurred .light { background: rgba(255, 255, 255, 0.16); }
 #app.sidebar-hidden .floating-bar { display: flex; }
 #app.sidebar-hidden .pane:first-child .pane-head { padding-left: 132px; }
 
-.panes { flex: 1; min-height: 0; display: flex; gap: 6px; }
-.panes.col { flex-direction: column; }
+.panes { flex: 1; min-height: 0; display: flex; gap: 6px; position: relative; }
 .panes:empty { display: none; }
 
 .pane {
@@ -188,7 +187,6 @@ body.blurred .light { background: rgba(255, 255, 255, 0.16); }
   border-radius: 11px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   overflow: hidden;
-  animation: pane-in .22s cubic-bezier(.2,.8,.2,1);
 }
 @keyframes pane-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
 .panes.multi .pane.focused { border-color: rgba(255, 255, 255, 0.16); }
@@ -387,11 +385,11 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 /* ---------- resizable splits ---------- */
 .panes.multi { gap: 0; }
 .gutter { flex: 0 0 8px; position: relative; cursor: col-resize; display: grid; place-items: center; -webkit-app-region: no-drag; }
-.panes.col .gutter { cursor: row-resize; }
+.split.col > .gutter { cursor: row-resize; }
 .gutter i { width: 2px; height: 36px; border-radius: 2px; background: rgba(255, 255, 255, 0); transition: background .15s, height .2s cubic-bezier(.2,.8,.2,1); }
-.panes.col .gutter i { width: 36px; height: 2px; transition: background .15s, width .2s cubic-bezier(.2,.8,.2,1); }
+.split.col > .gutter i { width: 36px; height: 2px; transition: background .15s, width .2s cubic-bezier(.2,.8,.2,1); }
 .gutter:hover i, .gutter.active i { background: rgba(255, 255, 255, 0.45); height: 64px; }
-.panes.col .gutter:hover i, .panes.col .gutter.active i { width: 64px; height: 2px; }
+.split.col > .gutter:hover i, .split.col > .gutter.active i { width: 64px; height: 2px; }
 body.resizing-col, body.resizing-col * { cursor: col-resize !important; user-select: none; }
 body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-select: none; }
 body.resizing-col .term-host, body.resizing-row .term-host { pointer-events: none; }
@@ -627,3 +625,28 @@ body.reduce-motion .dots-loader i { animation: none; opacity: .7; }
 ::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.28); }
 .md-preview pre::-webkit-scrollbar { height: 6px; }
 body.scene-light ::-webkit-scrollbar-thumb { background-color: rgba(0, 0, 0, 0.18); }
+
+/* ---------- split tree: rows and columns can nest ---------- */
+.split { display: flex; min-width: 0; min-height: 0; }
+.split.row { flex-direction: row; }
+.split.col { flex-direction: column; }
+.split > .pane, .split > .split { min-width: 0; min-height: 0; }
+.pane { will-change: auto; }
+
+/* drag a pane by its icon or title to move it */
+.pane-head .grip { -webkit-app-region: no-drag; cursor: grab; }
+.pane-head .grip:active { cursor: grabbing; }
+.pane-head .title.grip { flex: 0 1 auto; }
+.pane-head .tools { margin-left: auto; }
+.pane-head .timer.show { margin-left: auto; }
+.pane-head .timer.show ~ .tools { margin-left: 0; }
+
+/* zoom: one pane fills the stage, the rest wait underneath */
+.pane.zoom { position: absolute; inset: 0; z-index: 5; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6); }
+.panes.zoomed .pane:not(.zoom) { opacity: 0; pointer-events: none; transition: opacity .2s; }
+.panes.zoomed .gutter { visibility: hidden; }
+.pane.zoom .pane-head .tools .icon-btn:nth-last-child(2) { color: var(--text); }
+
+/* terminal scrollbars stay out of the way until you hover a pane */
+.term-host .xterm-viewport::-webkit-scrollbar-thumb { background-color: transparent; transition: background-color .2s; }
+.pane:hover .term-host .xterm-viewport::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.14); }

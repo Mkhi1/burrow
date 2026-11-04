@@ -155,6 +155,7 @@
     { match: (e, k) => e.ctrlKey && k === ',', run: () => B.settingsDialog() },
     { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'd', run: () => B.splitWithNew('row') },
     { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'e', run: () => B.splitWithNew('col') },
+    { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'enter', run: () => B.toggleZoom() },
     { match: (e, k) => e.ctrlKey && e.shiftKey && k === 'w', run: () => {
       const id = B.panes.currentPage().focus;
       if (id) B.closePane(id);

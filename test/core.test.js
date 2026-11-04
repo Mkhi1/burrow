@@ -26,7 +26,7 @@ test('showing a session replaces the focused pane, split adds a pane', () => {
   s = reduce(s, { type: 'session/create', projectId: 'p1', agent: 'codex', id: 's2', show: false });
   s = reduce(s, { type: 'pane/split', sessionId: 's2', dir: 'col' });
   assert.deepEqual(s.pages[0].panes, ['s1', 's2']);
-  assert.equal(s.pages[0].dir, 'col');
+  assert.equal(s.pages[0].tree.dir, 'col');
   s = addSession(s, 's3');
   assert.deepEqual(s.pages[0].panes, ['s1', 's3']);
 });
@@ -139,12 +139,13 @@ test('pane sizes persist until the layout changes', () => {
   let s = addSession(withProject(), 's1');
   s = reduce(s, { type: 'session/create', projectId: 'p1', agent: 'shell', id: 's2', show: false });
   s = reduce(s, { type: 'pane/split', sessionId: 's2', dir: 'row' });
-  s = reduce(s, { type: 'pane/sizes', sizes: [0.7, 0.3] });
-  assert.deepEqual(s.pages[0].sizes, [0.7, 0.3]);
-  assert.equal(reduce(s, { type: 'pane/sizes', sizes: [1] }), s); // wrong length ignored
-  assert.equal(reduce(s, { type: 'pane/sizes', sizes: [1, -1] }), s); // invalid ignored
+  s = reduce(s, { type: 'pane/sizes', path: [], sizes: [0.7, 0.3] });
+  assert.deepEqual(s.pages[0].tree.sizes, [0.7, 0.3]);
+  assert.equal(reduce(s, { type: 'pane/sizes', path: [], sizes: [1] }), s); // wrong length ignored
+  assert.equal(reduce(s, { type: 'pane/sizes', path: [], sizes: [1, -1] }), s); // invalid ignored
+  assert.equal(reduce(s, { type: 'pane/sizes', path: [5], sizes: [1, 1] }), s); // no such split
   s = reduce(s, { type: 'pane/close', sessionId: 's2' });
-  assert.equal(s.pages[0].sizes, undefined);
+  assert.equal(s.pages[0].tree, 's1');
 });
 
 test('findOnPath finds .cmd shims and ignores missing tools', () => {
@@ -222,9 +223,11 @@ test('pane/open adds beside the focus, focuses if already open, replaces when fu
   const again = reduce(s, { type: 'pane/open', paneId: 'edit:p1:README.md' });
   assert.deepEqual(again.pages[0].panes, ['s1', 'edit:p1:README.md']);
   assert.equal(again.pages[0].focus, 'edit:p1:README.md');
-  for (const f of ['a', 'b']) s = reduce(s, { type: 'pane/open', paneId: `edit:p1:${f}.md` });
+  for (const f of ['a', 'b', 'c', 'd']) s = reduce(s, { type: 'pane/open', paneId: `edit:p1:${f}.md` });
+  s = reduce(s, { type: 'pane/open', paneId: 'edit:p1:e.md' });
+  assert.equal(s.pages[0].panes.length, 6);
   s = reduce(s, { type: 'pane/open', paneId: 'edit:p1:c.md' });
-  assert.equal(s.pages[0].panes.length, 4);
+  assert.equal(s.pages[0].panes.length, 6);
   assert.ok(s.pages[0].panes.includes('edit:p1:c.md'));
 });
 
@@ -252,10 +255,10 @@ test('dragging a session places it beside a pane and keeps its own page', () => 
   s = reduce(s, { type: 'session/create', projectId: 'p1', agent: 'claude', id: 's2', show: false });
   s = reduce(s, { type: 'pane/place', sessionId: 's2', target: 's1', side: 'left' });
   assert.deepEqual(s.pages[0].panes, ['s2', 's1']);
-  assert.equal(s.pages[0].dir, 'row');
+  assert.equal(s.pages[0].tree.dir, 'row');
   s = reduce(s, { type: 'pane/place', sessionId: 's2', target: 's1', side: 'bottom' });
   assert.deepEqual(s.pages[0].panes, ['s1', 's2']);
-  assert.equal(s.pages[0].dir, 'col');
+  assert.equal(s.pages[0].tree.dir, 'col');
   s = reduce(s, { type: 'page/add' });
   s = reduce(s, { type: 'pane/place', sessionId: 's2', target: null, side: 'center' });
   assert.deepEqual(s.pages[1].panes, ['s2']);
@@ -267,4 +270,36 @@ test('dragging a session places it beside a pane and keeps its own page', () => 
   assert.equal(s.settings.page, 1);
   assert.deepEqual(s.pages[0].panes, ['s1']);
   assert.equal(reduce(s, { type: 'pane/place', sessionId: 'nope', target: null, side: 'left' }), s);
+});
+
+test('layouts can mix side-by-side and stacked panes', () => {
+  let s = addSession(withProject(), 's1');
+  for (const id of ['s2', 's3', 's4']) s = reduce(s, { type: 'session/create', projectId: 'p1', agent: 'shell', id, show: false });
+  // s1 | s2, then stack s3 under s2: one tall pane on the left, two on the right
+  s = reduce(s, { type: 'pane/place', sessionId: 's2', target: 's1', side: 'right' });
+  s = reduce(s, { type: 'pane/place', sessionId: 's3', target: 's2', side: 'bottom' });
+  assert.deepEqual(s.pages[0].tree, { dir: 'row', kids: ['s1', { dir: 'col', kids: ['s2', 's3'], sizes: [1, 1] }], sizes: [1, 1] });
+  // resizing the inner stack only touches that split
+  s = reduce(s, { type: 'pane/sizes', path: [1], sizes: [2, 1] });
+  assert.deepEqual(s.pages[0].tree.kids[1].sizes, [2, 1]);
+  // a third pane in the same direction shares the target's space
+  s = reduce(s, { type: 'pane/place', sessionId: 's4', target: 's3', side: 'bottom' });
+  assert.deepEqual(s.pages[0].tree.kids[1].kids, ['s2', 's3', 's4']);
+  assert.deepEqual(s.pages[0].tree.kids[1].sizes, [2, 0.5, 0.5]);
+  // moving a pane already on the page re-homes it; closing collapses empty splits
+  s = reduce(s, { type: 'pane/place', sessionId: 's1', target: 's4', side: 'right' });
+  assert.deepEqual(s.pages[0].panes, ['s2', 's3', 's4', 's1']);
+  assert.deepEqual(s.pages[0].tree.kids[2], { dir: 'row', kids: ['s4', 's1'], sizes: [1, 1] });
+  for (const id of ['s2', 's3', 's1']) s = reduce(s, { type: 'pane/close', sessionId: id });
+  assert.equal(s.pages[0].tree, 's4');
+});
+
+test('old flat pages are migrated to split trees', () => {
+  const s = normalize({ pages: [{ id: 'a', dir: 'col', panes: ['x', 'y'], sizes: [3, 1], focus: 'y' }, { id: 'b', panes: [] }] });
+  assert.deepEqual(s.pages[0].tree, { dir: 'col', kids: ['x', 'y'], sizes: [3, 1] });
+  assert.deepEqual(s.pages[0].panes, ['x', 'y']);
+  assert.equal(s.pages[1].tree, null);
+  // a damaged tree is cleaned up rather than crashing
+  const bad = normalize({ pages: [{ id: 'c', tree: { dir: 'row', kids: ['x', 'x', 42, { dir: 'nope' }] } }] });
+  assert.equal(bad.pages[0].tree, 'x');
 });

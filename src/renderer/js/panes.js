@@ -77,13 +77,16 @@
       paneEls.set(id, pane);
       return pane;
     }
-    const title = h('span.title');
-    const brand = h('span.brand', { html: icons.brand });
+    // The icon and title are a grip: drag them to move this pane anywhere in the layout.
+    const grip = { draggable: 'true', onDragstart: (e) => startPaneDrag(e, id), title: 'Drag to move this pane' };
+    const title = h('span.title.grip', grip);
+    const brand = h('span.brand.grip', { ...grip, html: icons.brand });
     const body = h('div.pane-body');
     const overlay = h('div.pane-overlay', { style: { display: 'none' } });
     const tools = h('div.tools', {},
       h('button.icon-btn', { html: icons.splitRight, title: 'Split right (Ctrl+Shift+D)', onClick: (e) => B.splitWithNew('row', e.currentTarget) }),
       h('button.icon-btn', { html: icons.splitDown, title: 'Split down (Ctrl+Shift+E)', onClick: (e) => B.splitWithNew('col', e.currentTarget) }),
+      h('button.icon-btn', { html: icons.zoom, title: 'Zoom pane (Ctrl+Shift+Enter)', onClick: () => toggleZoom(id) }),
       h('button.icon-btn', { html: icons.more, title: 'More', onClick: (e) => B.sessionMenu(id, e.currentTarget, true) }));
     const timerText = h('span');
     const timer = h('span.timer', {}, h('span.timer-dot'), timerText);
@@ -117,25 +120,85 @@
     } else pane.overlay.style.display = 'none';
   }
 
+  // ---------- layout: a tree of splits ----------
+  // The page stores a tree: a pane id, or { dir: 'row' | 'col', kids, sizes }.
+  // When only sizes change we just update flex values; when the shape changes we rebuild
+  // and let every pane glide from where it was to where it lands.
+  let lastShape = '';
+  let lastPageId = null;
+  let flexTargets = []; // [{ el }] in tree order, matched to sizes on size-only updates
+  let zoomed = null;
+
+  const shapeOf = (node) => (typeof node === 'string' ? node : `${node.dir}(${node.kids.map(shapeOf).join(',')})`);
+
+  /** The stored tree minus panes that can't be shown; each split remembers its path in the stored tree. */
+  function visibleTree(node, ok, path = []) {
+    if (!node) return null;
+    if (typeof node === 'string') return ok(node) ? node : null;
+    const kids = [];
+    const sizes = [];
+    node.kids.forEach((k, i) => {
+      const t = visibleTree(k, ok, [...path, i]);
+      if (!t) return;
+      kids.push(t);
+      sizes.push(node.sizes?.[i] > 0 ? node.sizes[i] : 1);
+    });
+    if (kids.length === 0) return null;
+    if (kids.length === 1) return kids[0];
+    return { dir: node.dir, kids, sizes, path };
+  }
+
+  function build(node, out) {
+    if (typeof node === 'string') return (paneEls.get(node) || buildPane(node)).el;
+    const el = h(`div.split.${node.dir}`);
+    node.kids.forEach((kid, i) => {
+      if (i > 0) el.append(buildGutter(node));
+      const child = build(kid, out);
+      out.push(child);
+      el.append(child);
+    });
+    return el;
+  }
+
+  function applySizes(node, list, i = { n: 0 }) {
+    if (typeof node === 'string') return;
+    node.kids.forEach((kid, k) => {
+      const el = list[i.n++];
+      if (el) el.style.flex = `${node.sizes[k]} 1 0`;
+      applySizes(kid, list, i);
+    });
+  }
+
   function render() {
     const page = currentPage();
     const container = document.getElementById('panes');
     const empty = document.getElementById('empty');
-    const ids = page.panes.filter((id) => B.sessionById(id) || B.editor.isOpenable(id));
+    const tree = visibleTree(page.tree, (id) => Boolean(B.sessionById(id) || B.editor.isOpenable(id)));
+    const ids = tree ? (typeof tree === 'string' ? [tree] : leavesOf(tree)) : [];
+    const shape = tree ? shapeOf(tree) : '';
+    const samePage = lastPageId === page.id;
+    lastPageId = page.id;
 
-    container.className = `panes ${page.dir === 'col' ? 'col' : ''} ${ids.length > 1 ? 'multi' : ''}`;
-    // Detach panes that are no longer visible (terminals stay alive in memory).
-    for (const [id, pane] of paneEls) if (!ids.includes(id)) pane.el.remove();
-    const sizes = page.sizes?.length === ids.length ? page.sizes : ids.map(() => 1);
-    const wanted = [];
-    ids.forEach((id, i) => {
-      const pane = paneEls.get(id) || buildPane(id);
-      pane.el.style.flex = `${sizes[i]} 1 0`;
-      if (i > 0) wanted.push(gutters[i - 1] || (gutters[i - 1] = buildGutter()));
-      wanted.push(pane.el);
-    });
-    const current = [...container.children];
-    if (current.length !== wanted.length || current.some((el, i) => el !== wanted[i])) container.replaceChildren(...wanted);
+    container.classList.toggle('multi', ids.length > 1);
+    if (zoomed && !ids.includes(zoomed)) setZoom(null, false);
+    if (shape !== lastShape || !container.firstChild !== !tree) {
+      lastShape = shape;
+      const before = new Map();
+      if (samePage) for (const [id, p] of paneEls) if (p.el.isConnected) before.set(id, p.el.getBoundingClientRect());
+      // Detach panes that are no longer visible (terminals stay alive in memory).
+      for (const [id, pane] of paneEls) if (!ids.includes(id)) pane.el.remove();
+      const out = [];
+      if (tree) {
+        const root = build(tree, out);
+        root.style.flex = '1 1 0';
+        container.replaceChildren(root);
+      } else container.replaceChildren();
+      flexTargets = out;
+      if (tree) applySizes(tree, flexTargets);
+      glide(ids, before);
+    } else if (tree) {
+      applySizes(tree, flexTargets);
+    }
     ids.forEach((id) => {
       const pane = paneEls.get(id);
       updatePane(pane, id, id === page.focus);
@@ -148,10 +211,59 @@
     requestAnimationFrame(B.terminals.refitAll);
   }
 
+  const leavesOf = (node) => (typeof node === 'string' ? [node] : node.kids.flatMap(leavesOf));
+
+  const EASE = 'cubic-bezier(.2,.8,.2,1)';
+
+  /** FLIP: each pane that moved slides and resizes from its old box; new panes fade in. */
+  function glide(ids, before) {
+    if (B.reduceMotion) return;
+    for (const id of ids) {
+      const el = paneEls.get(id).el;
+      const a = before.get(id);
+      if (!a) {
+        el.animate([{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: EASE });
+        continue;
+      }
+      const b = el.getBoundingClientRect();
+      if (Math.abs(a.left - b.left) + Math.abs(a.top - b.top) + Math.abs(a.width - b.width) + Math.abs(a.height - b.height) < 2) continue;
+      el.animate([
+        { transformOrigin: '0 0', transform: `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${a.height / b.height})` },
+        { transformOrigin: '0 0', transform: 'none' },
+      ], { duration: 300, easing: EASE });
+    }
+    setTimeout(() => B.terminals.refitAll(), 320);
+  }
+
+  // ---------- zoom: one pane fills the stage for a moment ----------
+  function setZoom(id, animate = true) {
+    const container = document.getElementById('panes');
+    const prev = zoomed && paneEls.get(zoomed)?.el;
+    const next = id && paneEls.get(id)?.el;
+    const el = next || prev;
+    const a = el?.getBoundingClientRect();
+    prev?.classList.remove('zoom');
+    zoomed = next ? id : null;
+    next?.classList.add('zoom');
+    container.classList.toggle('zoomed', Boolean(zoomed));
+    if (el && a && animate && !B.reduceMotion) {
+      const b = el.getBoundingClientRect();
+      el.animate([
+        { transformOrigin: '0 0', transform: `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${a.height / b.height})` },
+        { transformOrigin: '0 0', transform: 'none' },
+      ], { duration: 280, easing: EASE });
+    }
+    setTimeout(() => B.terminals.refitAll(), animate ? 300 : 0);
+  }
+  function toggleZoom(id = currentPage().focus) {
+    if (!id) return;
+    setZoom(zoomed === id ? null : id);
+  }
+
   // ---------- drag a session from the sidebar onto the stage ----------
   // A layer covers the stage while dragging (terminals and title bars would swallow the drop)
   // and a soft box previews where the session will land.
-  const MAX_PANES = 4;
+  const MAX_PANES = 6;
   const stageEl = document.getElementById('stage');
   const dropHint = h('div.drop-hint', {}, h('span'));
   const dropLayer = h('div.drop-layer', {}, dropHint);
@@ -173,6 +285,15 @@
   }
   document.addEventListener('dragend', endDrag);
 
+  function startPaneDrag(e, id) {
+    e.dataTransfer.setData('text/burrow-session', id);
+    e.dataTransfer.effectAllowed = 'move';
+    const ghost = paneEls.get(id)?.el.querySelector('.pane-head');
+    if (ghost) e.dataTransfer.setDragImage(ghost, 20, 18);
+    if (zoomed) setZoom(null, false);
+    B.beginSessionDrag(id);
+  }
+
   /** Which pane and side the pointer is over, plus the box to preview. */
   function zoneAt(x, y) {
     const page = currentPage();
@@ -185,10 +306,10 @@
       const others = ids.filter((x2) => x2 !== dragId).length;
       const fx = (x - r.left) / r.width;
       const fy = (y - r.top) / r.height;
-      let side;
-      if (others >= MAX_PANES) side = 'center';
-      else if (others > 1) side = page.dir === 'col' ? (fy < 0.5 ? 'top' : 'bottom') : (fx < 0.5 ? 'left' : 'right');
-      else side = fy < 0.22 ? 'top' : fy > 0.78 ? 'bottom' : fx < 0.5 ? 'left' : 'right';
+      // Nearest edge picks the side; the middle of the pane swaps it out instead.
+      const edges = { left: fx, right: 1 - fx, top: fy, bottom: 1 - fy };
+      const middle = Math.abs(fx - 0.5) < 0.16 && Math.abs(fy - 0.5) < 0.16;
+      const side = others >= MAX_PANES || middle ? 'center' : Object.keys(edges).reduce((m, k) => (edges[k] < edges[m] ? k : m));
       const half = {
         left: { left: r.left, top: r.top, width: r.width / 2, height: r.height },
         right: { left: r.left + r.width / 2, top: r.top, width: r.width / 2, height: r.height },
@@ -196,7 +317,8 @@
         bottom: { left: r.left, top: r.top + r.height / 2, width: r.width, height: r.height / 2 },
         center: { left: r.left, top: r.top, width: r.width, height: r.height },
       }[side];
-      return { target: id, side, rect: half, label: side === 'center' ? 'Replace' : 'Split here' };
+      const moving = page.panes.includes(dragId);
+      return { target: id, side, rect: half, label: side === 'center' ? (moving ? 'Swap here' : 'Replace') : moving ? 'Move here' : 'Split here' };
     }
     return null;
   }
@@ -227,47 +349,51 @@
     const id = dragId;
     const z = dropAt;
     endDrag();
-    if (id && z) burrow.dispatch({ type: 'pane/place', sessionId: id, target: z.target, side: z.side });
+    if (!id || !z) return;
+    const page = currentPage();
+    if (z.side === 'center' && page.panes.includes(id)) {
+      // dragging a pane onto another one swaps them
+      burrow.dispatch({ type: 'pane/swap', a: id, b: z.target });
+    } else burrow.dispatch({ type: 'pane/place', sessionId: id, target: z.target, side: z.side });
   });
 
   // ---------- resizable splits ----------
-  const gutters = [];
-  const MIN_SHARE = 0.12;
+  const MIN_SHARE = 0.1;
 
-  /** Drag handle between two panes; drag to resize, double-click to make all panes equal. */
-  function buildGutter() {
-    const g = h('div.gutter', { title: 'Drag to resize · double-click to reset' }, h('i'));
-    g.addEventListener('dblclick', () => burrow.dispatch({ type: 'pane/sizes', sizes: currentPage().panes.map(() => 1) }));
+  /** Drag handle between two children of a split; double-click makes that split even. */
+  function buildGutter(node) {
+    const g = h('div.gutter', { title: 'Drag to resize · double-click to even out' }, h('i'));
+    g.addEventListener('dblclick', () => burrow.dispatch({ type: 'pane/sizes', path: node.path, sizes: node.kids.map(() => 1) }));
     g.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      const container = g.parentElement;
-      const col = container.classList.contains('col');
-      const panes = [...container.querySelectorAll(':scope > .pane')];
-      const index = [...container.children].indexOf(g) / 2 - 0.5; // pane before the gutter
-      const before = panes[index];
-      const after = panes[index + 1];
+      const split = g.parentElement;
+      const col = split.classList.contains('col');
+      const kids = [...split.children].filter((c) => !c.classList.contains('gutter'));
+      const index = [...split.children].indexOf(g) / 2 - 0.5; // child before the gutter
+      const before = kids[index];
+      const after = kids[index + 1];
       const size = (el) => (col ? el.getBoundingClientRect().height : el.getBoundingClientRect().width);
-      const all = panes.map(size);
+      const all = kids.map(size);
       const sum = all.reduce((a, b) => a + b, 0);
       const pair = all[index] + all[index + 1];
       const start = col ? e.clientY : e.clientX;
       document.body.classList.add(col ? 'resizing-row' : 'resizing-col');
       g.classList.add('active');
-      const shares = () => panes.map((p) => size(p) / sum);
+      kids.forEach((k, i) => (k.style.flex = `${all[i] / sum} 1 0`));
       const move = (ev) => {
         const delta = (col ? ev.clientY : ev.clientX) - start;
         const min = sum * MIN_SHARE;
         const a = Math.min(Math.max(all[index] + delta, min), pair - min);
         before.style.flex = `${a / sum} 1 0`;
         after.style.flex = `${(pair - a) / sum} 1 0`;
-        panes.forEach((p, i) => i !== index && i !== index + 1 && (p.style.flex = `${all[i] / sum} 1 0`));
       };
       const up = () => {
         removeEventListener('mousemove', move);
         removeEventListener('mouseup', up);
         document.body.classList.remove('resizing-row', 'resizing-col');
         g.classList.remove('active');
-        burrow.dispatch({ type: 'pane/sizes', sizes: shares().map((s) => Math.round(s * 1000) / 1000) });
+        const sizes = kids.map((k) => Math.round((size(k) / sum) * 1000) / 1000);
+        burrow.dispatch({ type: 'pane/sizes', path: node.path, sizes });
         B.terminals.refitAll();
       };
       addEventListener('mousemove', move);
@@ -326,5 +452,6 @@
 
   B.closePane = closePane;
   B.focusPane = focusPane;
+  B.toggleZoom = toggleZoom;
   B.panes = { render, forget, currentPage, trackStatus, elapsed, formatElapsed };
 })();

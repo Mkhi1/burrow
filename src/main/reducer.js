@@ -4,9 +4,10 @@
 
 const crypto = require('node:crypto');
 const path = require('node:path');
+const layout = require('./layout');
 
 const newId = () => crypto.randomUUID().slice(0, 8);
-const MAX_PANES = 4;
+const MAX_PANES = 6;
 
 const DEFAULT_SETTINGS = Object.freeze({
   accent: '#f2f2f2',
@@ -30,7 +31,7 @@ const initialState = () => ({
   settings: { ...DEFAULT_SETTINGS },
   projects: [],
   sessions: [],
-  pages: [{ id: newId(), dir: 'row', panes: [], focus: null }],
+  pages: [{ id: newId(), panes: [], tree: null, focus: null }],
 });
 
 const migrateSettings = (s) => (s.accent === '#e8825a' ? { ...s, accent: DEFAULT_SETTINGS.accent } : s);
@@ -38,7 +39,7 @@ const migrateSettings = (s) => (s.accent === '#e8825a' ? { ...s, accent: DEFAULT
 function normalize(raw) {
   const base = initialState();
   if (!raw || typeof raw !== 'object') return base;
-  const pages = Array.isArray(raw.pages) && raw.pages.length ? raw.pages : base.pages;
+  const pages = (Array.isArray(raw.pages) && raw.pages.length ? raw.pages : base.pages).map(migratePage);
   return {
     settings: migrateSettings({ ...DEFAULT_SETTINGS, ...(raw.settings || {}) }),
     projects: Array.isArray(raw.projects) ? raw.projects : [],
@@ -46,6 +47,18 @@ function normalize(raw) {
     pages,
   };
 }
+
+/** Pages store a split tree; `panes` is kept as its flat list of pane ids. */
+function migratePage(p) {
+  const tree = 'tree' in p ? layout.sanitize(p.tree) : layout.fromFlat(p.dir, p.panes, p.sizes);
+  const panes = layout.leaves(tree);
+  return { id: p.id || newId(), panes, tree, focus: panes.includes(p.focus) ? p.focus : panes[0] || null };
+}
+
+const withTree = (page, tree, focus = page.focus) => {
+  const panes = layout.leaves(tree);
+  return { ...page, tree, panes, focus: panes.includes(focus) ? focus : panes[0] || null };
+};
 
 const mapPage = (state, index, fn) => ({
   ...state,
@@ -64,10 +77,9 @@ function showSession(state, sessionId) {
     return mapPage(withPage, pageIdx, (p) => ({ ...p, focus: sessionId }));
   }
   return mapPage(state, currentIndex(state), (p) => {
-    if (!p.panes.length) return { ...p, panes: [sessionId], focus: sessionId };
-    const slot = Math.max(p.panes.indexOf(p.focus), 0);
-    const panes = p.panes.map((id, i) => (i === slot ? sessionId : id));
-    return { ...p, panes, focus: sessionId };
+    if (!p.panes.length) return withTree(p, sessionId, sessionId);
+    const slot = p.panes.includes(p.focus) ? p.focus : p.panes[0];
+    return withTree(p, layout.replace(p.tree, slot, sessionId), sessionId);
   });
 }
 
@@ -149,9 +161,8 @@ function reduce(state, action) {
       const idx = currentIndex(state);
       const page = state.pages[idx];
       if (page.panes.length >= MAX_PANES || page.panes.includes(action.sessionId)) return state;
-      const at = Math.max(page.panes.indexOf(page.focus), 0) + 1;
-      const panes = [...page.panes.slice(0, at), action.sessionId, ...page.panes.slice(at)];
-      return mapPage(state, idx, (p) => ({ ...p, dir: action.dir || p.dir, panes, focus: action.sessionId, sizes: undefined }));
+      const side = action.dir === 'col' ? 'bottom' : 'right';
+      return mapPage(state, idx, (p) => withTree(p, layout.insertBeside(p.tree, p.focus, action.sessionId, side), action.sessionId));
     }
     case 'pane/open': {
       // Focus it if already open anywhere; else add beside the focused pane (or replace it when full).
@@ -162,50 +173,51 @@ function reduce(state, action) {
         return mapPage(moved, pageIdx, (p) => ({ ...p, focus: id }));
       }
       return mapPage(state, currentIndex(state), (p) => {
-        const slot = Math.max(p.panes.indexOf(p.focus), 0);
-        if (p.panes.length >= MAX_PANES) {
-          return { ...p, panes: p.panes.map((x, i) => (i === slot ? id : x)), focus: id };
-        }
-        const at = p.panes.length ? slot + 1 : 0;
-        return { ...p, panes: [...p.panes.slice(0, at), id, ...p.panes.slice(at)], focus: id, sizes: undefined };
+        const slot = p.panes.includes(p.focus) ? p.focus : p.panes[0];
+        if (p.panes.length >= MAX_PANES) return withTree(p, layout.replace(p.tree, slot, id), id);
+        return withTree(p, layout.insertBeside(p.tree, slot, id, 'right'), id);
       });
     }
     case 'pane/place': {
-      // Drag-and-drop: put a session beside (or in place of) a pane on the current page.
-      // side: 'left' | 'right' | 'top' | 'bottom' | 'center'. The session stays on its own page too,
-      // so closing this pane later leaves that page as it was.
+      // Drag-and-drop: put a session (or a pane already on this page) beside, or in place of, a pane.
+      // side: 'left' | 'right' | 'top' | 'bottom' | 'center'. Any pane can be split either way, so
+      // layouts can mix side-by-side and stacked panes. A session keeps its own page too.
       const id = action.sessionId;
-      const sides = { left: ['row', 0], right: ['row', 1], top: ['col', 0], bottom: ['col', 1] };
-      if (!state.sessions.some((x) => x.id === id) || !(action.side in sides || action.side === 'center')) return state;
-      return mapPage(state, currentIndex(state), (p) => {
-        const rest = p.panes.filter((x) => x !== id);
-        const t = rest.indexOf(action.target);
-        if (t < 0 || action.side === 'center' || rest.length >= MAX_PANES) {
-          if (t < 0) return { ...p, panes: rest.length >= MAX_PANES ? rest : [...rest, id], focus: id, sizes: undefined };
-          return { ...p, panes: rest.map((x, i) => (i === t ? id : x)), focus: id, sizes: undefined };
+      const idx = currentIndex(state);
+      const known = state.sessions.some((x) => x.id === id) || state.pages[idx].panes.includes(id);
+      if (!known || !(action.side in layout.SIDES || action.side === 'center')) return state;
+      return mapPage(state, idx, (p) => {
+        const rest = layout.remove(p.tree, id);
+        const ids = layout.leaves(rest);
+        const hit = ids.includes(action.target);
+        if (!rest) return withTree(p, id, id);
+        if (action.side === 'center' || ids.length >= MAX_PANES) {
+          return hit ? withTree(p, layout.replace(rest, action.target, id), id) : p;
         }
-        const [dir, after] = sides[action.side];
-        const at = t + after;
-        return { ...p, dir: rest.length === 1 ? dir : p.dir, panes: [...rest.slice(0, at), id, ...rest.slice(at)], focus: id, sizes: undefined };
+        return withTree(p, layout.insertBeside(rest, hit ? action.target : null, id, action.side), id);
       });
+    }
+    case 'pane/swap': {
+      const idx = currentIndex(state);
+      const { panes } = state.pages[idx];
+      if (action.a === action.b || !panes.includes(action.a) || !panes.includes(action.b)) return state;
+      return mapPage(state, idx, (p) => withTree(p, layout.swap(p.tree, action.a, action.b), action.a));
     }
     case 'pane/close':
       return mapPage(state, currentIndex(state), (p) => dropPanes(p, new Set([action.sessionId])));
     case 'pane/focus':
       return mapPage(state, currentIndex(state), (p) => ({ ...p, focus: action.sessionId }));
     case 'pane/sizes': {
+      // Sizes of one split in the tree, found by its path of child indexes.
       const idx = currentIndex(state);
-      const page = state.pages[idx];
-      const ok = Array.isArray(action.sizes) && action.sizes.length === page.panes.length && action.sizes.every((n) => Number.isFinite(n) && n > 0);
-      return ok ? mapPage(state, idx, (p) => ({ ...p, sizes: action.sizes })) : state;
+      const tree = layout.setSizes(state.pages[idx].tree, action.path || [], action.sizes);
+      return tree === state.pages[idx].tree ? state : mapPage(state, idx, (p) => ({ ...p, tree }));
     }
-    case 'pane/dir':
-      return mapPage(state, currentIndex(state), (p) => ({ ...p, dir: action.dir }));
 
     case 'page/add':
       return {
         ...state,
-        pages: [...state.pages, { id: newId(), dir: 'row', panes: [], focus: null }],
+        pages: [...state.pages, { id: newId(), panes: [], tree: null, focus: null }],
         settings: { ...state.settings, page: state.pages.length },
       };
     case 'page/go': {
@@ -223,10 +235,8 @@ function reduce(state, action) {
 }
 
 function dropPanes(page, gone) {
-  const panes = page.panes.filter((id) => !gone.has(id));
-  const focus = panes.includes(page.focus) ? page.focus : panes[0] || null;
-  const sizes = panes.length === page.panes.length ? page.sizes : undefined;
-  return { ...page, panes, focus, sizes };
+  if (!page.panes.some((id) => gone.has(id))) return page;
+  return withTree(page, [...gone].reduce((t, id) => layout.remove(t, id), page.tree));
 }
 
 module.exports = { reduce, normalize, initialState, newId, DEFAULT_SETTINGS, MAX_PANES };
