@@ -6,3 +6,5 @@ Thumbs.db
 release/
 src/renderer/vendor/
 .playwright-mcp/
+/device-insights-*.png
+/fan-card.png
