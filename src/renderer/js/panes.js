@@ -201,6 +201,10 @@
     }
     ids.forEach((id) => {
       const pane = paneEls.get(id);
+      if (pane.fade && pane.fade.playState !== 'running') {
+        pane.fade.cancel(); // a pane faded out on one page must be visible when shown again
+        pane.fade = null;
+      }
       updatePane(pane, id, id === page.focus);
       if (!B.editor.isEditorId(id)) B.terminals.attach(id, pane.body);
     });
@@ -445,9 +449,14 @@
     const el = paneEls.get(id)?.el;
     const done = () => burrow.dispatch({ type: 'pane/close', sessionId: id });
     if (!el || !el.isConnected || B.reduceMotion) return done();
-    el.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }], { duration: 160, easing: 'ease-in', fill: 'forwards' }).finished.then(() => {
-      done().then(() => el.getAnimations().forEach((a) => a.cancel()));
-    });
+    // Keep the animation itself: once the pane leaves the DOM, el.getAnimations() no longer finds it,
+    // and a leftover fade would make the pane invisible when it shows again on another page.
+    const fade = el.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }], { duration: 160, easing: 'ease-in', fill: 'forwards' });
+    const pane = paneEls.get(id);
+    if (pane) pane.fade = fade;
+    // Animations pause while the window is hidden; never let that block the close itself.
+    const settled = Promise.race([fade.finished, new Promise((r) => setTimeout(r, 220))]);
+    settled.then(() => done()).finally(() => setTimeout(() => fade.cancel(), 30));
   }
 
   B.closePane = closePane;
