@@ -5,3 +5,4 @@ dist/
 Thumbs.db
 release/
 src/renderer/vendor/
+.playwright-mcp/
