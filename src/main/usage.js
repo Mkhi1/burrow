@@ -8,7 +8,7 @@ const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const { aggregate } = require('./usageAggregate');
 
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2; // 2: summaries also keep per-hour totals
 const ROOTS = [
   { agent: 'claude', dir: path.join(os.homedir(), '.claude', 'projects') },
   { agent: 'codex', dir: path.join(os.homedir(), '.codex', 'sessions') },

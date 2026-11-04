@@ -16,6 +16,7 @@ function lastDays(now, n) {
 
 const zero = () => ({ input: 0, cacheWrite: 0, cacheRead: 0, output: 0, messages: 0 });
 const total = (t) => t.input + t.cacheWrite + t.cacheRead + t.output;
+const weekdayOf = (day) => (new Date(`${day}T00:00`).getDay() + 6) % 7; // Monday = 0
 
 function addInto(t, b) {
   t.input += b[0];
@@ -43,7 +44,12 @@ function aggregate(summaries, { range = '7d', agent = 'all', now = new Date() } 
   const keep = (day) => !Number.isFinite(span) || inRange.has(day);
 
   const totals = zero();
-  const perDay = new Map(chartDays.map((d) => [d, 0]));
+  const perDay = new Map(chartDays.map((d) => [d, zero()]));
+  const trendDays = lastDays(now, 30);
+  const allDays = new Map(); // day -> total, every day (for the trend, streak and previous period)
+  const rangeDays = new Map(); // day -> total, days inside the range
+  const heat = Array.from({ length: 7 }, () => new Array(24).fill(0)); // weekday x hour
+  const hours = new Array(24).fill(0);
   const projects = new Map();
   const models = new Map();
   const sessions = new Map();
@@ -55,8 +61,11 @@ function aggregate(summaries, { range = '7d', agent = 'all', now = new Date() } 
     const sessKey = `${s.agent}:${s.session || s.title || s.first}`;
     for (const [key, b] of Object.entries(s.buckets)) {
       const [day, model] = key.split('|');
-      if (chartSet.has(day)) perDay.set(day, perDay.get(day) + b[0] + b[1] + b[2] + b[3]);
+      const sum = b[0] + b[1] + b[2] + b[3];
+      if (chartSet.has(day)) addInto(perDay.get(day), b);
+      allDays.set(day, (allDays.get(day) || 0) + sum);
       if (!keep(day)) continue;
+      rangeDays.set(day, (rangeDays.get(day) || 0) + sum);
       addInto(totals, b);
       for (const [map, k] of [[projects, projKey], [models, model], [sessions, sessKey], [agents, s.agent]]) {
         if (!map.has(k)) map.set(k, zero());
@@ -70,7 +79,30 @@ function aggregate(summaries, { range = '7d', agent = 'all', now = new Date() } 
       const proj = projects.get(projKey);
       proj.cwd = proj.cwd || s.cwd;
     }
+    for (const [key, v] of Object.entries(s.hours || {})) {
+      const [day, hr] = key.split('|');
+      if (!keep(day)) continue;
+      heat[weekdayOf(day)][Number(hr)] += v;
+      hours[Number(hr)] += v;
+    }
   }
+
+  // the same length of time just before this range, to compare against
+  let prevTotal = null;
+  if (Number.isFinite(span)) {
+    const prev = lastDays(new Date(now.getFullYear(), now.getMonth(), now.getDate() - span), span);
+    prevTotal = prev.reduce((a, d) => a + (allDays.get(d) || 0), 0);
+  }
+  let streak = 0;
+  for (let i = 0; ; i++) {
+    const d = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i));
+    if (allDays.get(d)) streak++;
+    else if (i > 0) break; // today may still be empty
+    if (i > 3660) break;
+  }
+  const active = [...rangeDays.entries()].filter(([, v]) => v > 0);
+  const busiest = active.reduce((m, [day, v]) => (!m || v > m.total ? { day, total: v } : m), null);
+  const peakHour = hours.reduce((m, v, i) => (v > hours[m] ? i : m), 0);
 
   const prompt = totals.input + totals.cacheWrite + totals.cacheRead;
   return {
@@ -78,7 +110,19 @@ function aggregate(summaries, { range = '7d', agent = 'all', now = new Date() } 
     agent,
     totals: { ...totals, total: total(totals), sessions: sessions.size },
     cacheHit: prompt ? totals.cacheRead / prompt : 0,
-    days: chartDays.map((day) => ({ day, total: perDay.get(day) })),
+    days: chartDays.map((day) => { const t = perDay.get(day); return { day, ...t, total: total(t) }; }),
+    trend: trendDays.map((day) => ({ day, total: allDays.get(day) || 0 })),
+    prevTotal,
+    heat,
+    hours,
+    stats: {
+      activeDays: active.length,
+      busiest,
+      streak,
+      peakHour: hours[peakHour] ? peakHour : null,
+      avgPerDay: active.length ? total(totals) / active.length : 0,
+      perReply: totals.messages ? total(totals) / totals.messages : 0,
+    },
     agents: top(agents, 10),
     projects: top(projects, 8, (_k, t) => ({ name: t.cwd ? path.win32.basename(t.cwd) || t.cwd : 'unknown', cwd: t.cwd })),
     models: top(models, 6),

@@ -1,7 +1,9 @@
 'use strict';
 
 // Parses agent transcript files into compact per-day token buckets.
-// A file summary: { agent, cwd, session, title, first, last, buckets: { "YYYY-MM-DD|model": [in, cacheWrite, cacheRead, out, msgs] } }
+// A file summary: { agent, cwd, session, title, first, last,
+//   buckets: { "YYYY-MM-DD|model": [in, cacheWrite, cacheRead, out, msgs] },
+//   hours: { "YYYY-MM-DD|H": tokens } }   (local hour 0-23, for the when-you-work heatmap)
 
 const fs = require('node:fs');
 const readline = require('node:readline');
@@ -15,7 +17,7 @@ const dayKey = (ts) => {
 const num = (v) => (Number.isFinite(v) && v > 0 ? v : 0);
 
 function emptySummary(agent) {
-  return { agent, cwd: null, session: null, title: null, first: null, last: null, buckets: {} };
+  return { agent, cwd: null, session: null, title: null, first: null, last: null, buckets: {}, hours: {} };
 }
 
 function add(summary, ts, model, inp, cw, cr, out) {
@@ -28,6 +30,8 @@ function add(summary, ts, model, inp, cw, cr, out) {
   b[2] += cr;
   b[3] += out;
   b[4] += 1;
+  const hour = `${day}|${new Date(ts).getHours()}`;
+  summary.hours[hour] = (summary.hours[hour] || 0) + inp + cw + cr + out;
   if (!summary.first || ts < summary.first) summary.first = ts;
   if (!summary.last || ts > summary.last) summary.last = ts;
 }

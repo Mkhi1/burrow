@@ -135,6 +135,27 @@ test('aggregate sums buckets inside the range only', () => {
   assert.equal(hit, 0.7);
 });
 
+test('aggregate adds trend, comparison, heatmap and stats', () => {
+  const now = new Date(2026, 10, 2, 12); // Mon 2 Nov 2026
+  const summaries = [
+    { agent: 'claude', cwd: 'C:/code/app', session: 'a', last: '2026-11-02T10:00:00Z',
+      buckets: { '2026-11-02|opus': [10, 20, 70, 5, 2], '2026-11-01|opus': [40, 0, 0, 10, 1], '2026-10-20|opus': [300, 0, 0, 0, 1] },
+      hours: { '2026-11-02|14': 105, '2026-11-01|9': 50, '2026-10-20|9': 300 } },
+  ];
+  const week = aggregate(summaries, { range: '7d', now });
+  assert.deepEqual([week.days.at(-1).input, week.days.at(-1).output, week.days.at(-1).cacheRead], [10, 5, 70]);
+  assert.equal(week.trend.length, 30);
+  assert.equal(week.prevTotal, 300); // 20 Oct falls in the 7 days before this week
+  assert.equal(week.heat[0][14], 105); // Monday 14:00
+  assert.equal(week.heat[6][9], 50); // Sunday 09:00
+  assert.equal(week.hours[9], 50); // 20 Oct is outside the range
+  assert.equal(week.stats.activeDays, 2);
+  assert.equal(week.stats.streak, 2);
+  assert.deepEqual(week.stats.busiest, { day: '2026-11-02', total: 105 });
+  assert.equal(week.stats.peakHour, 14);
+  assert.equal(aggregate(summaries, { range: 'all', now }).prevTotal, null);
+});
+
 test('pane sizes persist until the layout changes', () => {
   let s = addSession(withProject(), 's1');
   s = reduce(s, { type: 'session/create', projectId: 'p1', agent: 'shell', id: 's2', show: false });
