@@ -1,0 +1,6 @@
+/* Photo wallpapers (ASCII art). Colors come from the photo, set by js/wallpaper.js. */
+body[data-scene^="wall-"] { --accent: var(--wall-accent, #f2f2f2); }
+body[data-scene^="wall-"].glass-cards { --card: var(--wall-card, rgba(6, 5, 5, 0.72)); }
+body[data-scene^="wall-"] #sidebar { background: linear-gradient(90deg, rgba(0,0,0,.78), rgba(0,0,0,.62)); }
+body[data-scene^="wall-"].scene-light #sidebar { background: rgba(10,10,12,.86); }
+body[data-scene^="wall-"] .empty { text-shadow: 0 1px 14px #000, 0 0 2px #000; }

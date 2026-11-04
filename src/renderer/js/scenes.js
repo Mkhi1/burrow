@@ -768,6 +768,11 @@
 
   B.scenes = {
     set,
+    /** Add a scene from another file (wallpapers). def: { name, make, light, fps }. */
+    register(id, def) {
+      SCENES[id] = def;
+    },
+    current: () => currentId,
     drawAt(time) {
       if (scene) scene.frame(ctx, time, 0, W, H);
     },

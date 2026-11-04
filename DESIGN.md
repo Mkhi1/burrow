@@ -229,6 +229,14 @@ A working row also gets a slow light sweep (`linear-gradient` 7% white, 2.4s). A
 - **Press:** `scale(.94)` on buttons and `.985` on rows.
 - **Always respect reduced motion:** `@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }`.
 
+### Photo wallpapers (rule)
+
+- **A photo is never shown as a plain image.** It is always converted to ASCII art (`src/renderer/js/wallpaper.js`): every cell gets a character, nothing is left blank, and each character keeps the photo's own color.
+- **Colors come from the photo.** On load the photo is read once for its brightness and main hue. That picks light or dark mode, the accent (kept readable with black button text), the backdrop tint, and how dark glass cards get.
+- **Balance, don't clash.** In dark mode bright cells are capped and shadows are lifted only enough to keep their color; in light mode it's dark ink on paper. Code on top must stay easy to read.
+- **Crop around the subject.** Each wallpaper has a `focus` point that stays in view when the window crops it.
+- To add one: drop the photo in `src/renderer/wallpapers/` and add an entry to `WALLPAPERS`.
+
 ---
 
 ## 8. Voice
